@@ -7,7 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && node scripts/build.mjs",
     "preview": "vite preview --host 127.0.0.1",
-    "music:migrate": "node scripts/migrate-music.mjs"
+    "music:migrate": "node scripts/migrate-music.mjs",
+    "music:seed": "node scripts/generate-music-seed.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.52.1",
