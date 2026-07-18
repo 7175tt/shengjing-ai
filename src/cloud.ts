@@ -26,12 +26,12 @@ export async function signOut() {
   if (error) throw error;
 }
 
-export async function analyzeInCloud(body: string, style: StoryStyle): Promise<SceneCue[]> {
+export async function analyzeInCloud(body: string, style: StoryStyle): Promise<{ scenes: SceneCue[]; model?: string }> {
   if (!supabase) throw new Error("尚未設定雲端 AI");
   const { data, error } = await supabase.functions.invoke("analyze-story", { body: { story: body, style } });
   if (error) throw error;
   if (!Array.isArray(data?.scenes)) throw new Error("AI 回傳格式不完整");
-  return data.scenes as SceneCue[];
+  return { scenes: data.scenes as SceneCue[], model: typeof data.model === "string" ? data.model : undefined };
 }
 
 export interface NarrationResult {

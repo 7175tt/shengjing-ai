@@ -106,6 +106,9 @@ drop policy if exists "public can read published music" on public.music_tracks;
 create policy "public can read published music" on public.music_tracks
   for select using (published = true);
 
+grant usage on schema public to anon, authenticated;
+grant select on table public.music_tracks to anon, authenticated;
+
 insert into storage.buckets (id, name, public, allowed_mime_types)
 values ('music-library', 'music-library', true, array['audio/mpeg', 'audio/ogg', 'audio/wav'])
 on conflict (id) do update set public = excluded.public, allowed_mime_types = excluded.allowed_mime_types;

@@ -40,6 +40,21 @@ const moodDefaults: Record<NarrativeMood, Defaults> = {
   triumph: { moodLabel: "明亮釋放", narrativeFunction: "收束情緒", valence: 0.86, arousal: 0.76, tension: 0.24, musicTrackId: "legend", musicLevel: 0.22, narrationRate: 0.9 },
 };
 
+const styleProfiles: Record<StoryStyle, {
+  arousal: number;
+  tension: number;
+  musicLevel: number;
+  narrationRate: number;
+  transitionSeconds: number;
+  restrainedTransitions?: boolean;
+}> = {
+  "自動判讀": { arousal: 0, tension: 0, musicLevel: 0, narrationRate: 0, transitionSeconds: 0 },
+  "忠實原文": { arousal: -0.02, tension: -0.02, musicLevel: -0.01, narrationRate: 0, transitionSeconds: 0.3 },
+  "電影感": { arousal: 0.1, tension: 0.08, musicLevel: 0.035, narrationRate: 0.025, transitionSeconds: -0.35 },
+  "溫柔細膩": { arousal: -0.08, tension: -0.05, musicLevel: -0.025, narrationRate: -0.055, transitionSeconds: 0.9, restrainedTransitions: true },
+  "克制敘事": { arousal: -0.11, tension: -0.09, musicLevel: -0.04, narrationRate: -0.025, transitionSeconds: 1.1, restrainedTransitions: true },
+};
+
 const clamp = (value: number, minimum = -1, maximum = 1) => Math.min(maximum, Math.max(minimum, value));
 const sentences = (text: string) => (text.match(/[^。！？!?]+[。！？!?」]?/g) ?? [text]).map((part) => part.trim()).filter(Boolean);
 
@@ -89,6 +104,7 @@ function transitionFor(current: NarrativeMood, previous?: NarrativeMood): Pick<S
 
 export function analyzeStory(source: string, style: StoryStyle): SceneCue[] {
   const segments = segmentStory(source);
+  const styleProfile = styleProfiles[style];
   let cursor = 0;
   return segments.map((text, index) => {
     const startOffset = source.indexOf(text, cursor);
@@ -98,12 +114,16 @@ export function analyzeStory(source: string, style: StoryStyle): SceneCue[] {
     const previousMood = index > 0 ? inferMood(segments[index - 1]) : undefined;
     const defaults = moodDefaults[mood];
     const transition = transitionFor(mood, previousMood);
+    const restrainedTransition = styleProfile.restrainedTransitions && transition.transitionType === "swell"
+      ? { ...transition, transitionType: "crossfade" as const, transitionLabel: "保留尾韻，克制地交叉淡化" }
+      : transition;
     const matchedKeywords = keywordMatches(text, mood).slice(0, 5);
     const first = sentences(text)[0]?.replace(/[「」『』]/g, "") ?? text;
     const excerpt = first.length > 15 ? `${first.slice(0, 15)}…` : first;
-    const reason = matchedKeywords.length
+    const baseReason = matchedKeywords.length
       ? `偵測到「${matchedKeywords.join("、")}」等敘事線索，安排${defaults.moodLabel}的聲音方向。`
       : `本段沒有強制套用類型公式，以「${style}」的中性聲音方向忠實處理。`;
+    const reason = `${baseReason} 導演風格採「${style}」，同步調整旁白節奏、配樂音量與轉場幅度。`;
     return {
       id: `scene-${index + 1}`,
       index,
@@ -113,9 +133,12 @@ export function analyzeStory(source: string, style: StoryStyle): SceneCue[] {
       endOffset: cursor,
       mood,
       ...defaults,
-      arousal: clamp(defaults.arousal + Math.min(0.08, matchedKeywords.length * 0.02), 0, 1),
-      tension: clamp(defaults.tension + (mood === "crisis" ? 0.05 : 0), 0, 1),
-      ...transition,
+      arousal: clamp(defaults.arousal + Math.min(0.08, matchedKeywords.length * 0.02) + styleProfile.arousal, 0, 1),
+      tension: clamp(defaults.tension + (mood === "crisis" ? 0.05 : 0) + styleProfile.tension, 0, 1),
+      musicLevel: clamp(defaults.musicLevel + styleProfile.musicLevel, 0.08, 0.35),
+      narrationRate: clamp(defaults.narrationRate + styleProfile.narrationRate, 0.75, 1.15),
+      ...restrainedTransition,
+      transitionSeconds: clamp(restrainedTransition.transitionSeconds + styleProfile.transitionSeconds, 1, 8),
       reason,
       matchedKeywords,
     };
@@ -124,16 +147,23 @@ export function analyzeStory(source: string, style: StoryStyle): SceneCue[] {
 
 export function assignMusicTracks(cues: SceneCue[], tracks: MusicTrack[]) {
   let previousId = "";
+  let previousMood: NarrativeMood | "" = "";
   return cues.map((cue) => {
     const candidates = tracks.filter((track) => track.moods.includes(cue.mood));
     const pool = candidates.length ? candidates : tracks;
     const scored = pool.map((track) => ({
       track,
-      score: track.tags.filter((tag) => cue.text.includes(tag) || cue.matchedKeywords.includes(tag)).length,
-    })).sort((a, b) => b.score - a.score);
-    const alternatives = scored.filter(({ track }) => track.id !== previousId);
-    const selected = (alternatives.length ? alternatives : scored)[cue.index % Math.max(1, (alternatives.length ? alternatives : scored).length)]?.track;
+      score: track.tags.reduce((score, tag) => {
+        const keywordHit = cue.matchedKeywords.some((keyword) => keyword.includes(tag) || tag.includes(keyword));
+        return score + (cue.text.includes(tag) ? 3 : 0) + (keywordHit ? 4 : 0);
+      }, track.moods.includes(cue.mood) ? 2 : 0)
+        + (track.id === previousId && cue.mood === previousMood ? 1.5 : 0),
+    })).sort((a, b) => b.score - a.score || a.track.title.localeCompare(b.track.title));
+    const bestScore = scored[0]?.score ?? 0;
+    const bestMatches = scored.filter(({ score }) => score === bestScore);
+    const selected = bestMatches[cue.index % Math.max(1, bestMatches.length)]?.track;
     previousId = selected?.id ?? cue.musicTrackId;
+    previousMood = cue.mood;
     return selected ? { ...cue, musicTrackId: selected.id } : cue;
   });
 }

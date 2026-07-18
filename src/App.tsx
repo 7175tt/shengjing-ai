@@ -10,12 +10,17 @@ import { analyzeInCloud, generateNarration, getCloudUser, isCloudConfigured, loa
 import { assignMusicTracks, getTrack, moodColor, MUSIC_LIBRARY } from "./storyEngine";
 import { loadNarrationSettings, NARRATION_PROVIDERS, providerLabel, saveNarrationSettings, VOICE_LAB_SAMPLES } from "./narration";
 import { exportCueSheet, loadCurrentProjectId, loadProjects, newProject, saveCurrentProjectId, saveProjects } from "./storage";
-import { STORY_STYLES, type AnalysisMode, type MusicTrack, type NarrationProvider, type NarrationSettings, type SceneCue, type StoryProject, type StoryStyle } from "./types";
+import { STORY_STYLES, STORY_STYLE_DESCRIPTIONS, type AnalysisMode, type MusicTrack, type NarrationProvider, type NarrationSettings, type SceneCue, type StoryProject, type StoryStyle } from "./types";
 import { analyzeStory } from "./storyEngine";
 
 type Toast = { message: string; tone?: "good" | "warn" } | null;
 const styles: readonly StoryStyle[] = STORY_STYLES;
 const formatDate = (date: string) => new Intl.DateTimeFormat("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(date));
+const estimateCueSeconds = (scene: SceneCue) => Math.max(4, scene.text.replace(/\s/g, "").length / Math.max(2.8, 4.15 * scene.narrationRate));
+const formatClock = (seconds: number) => {
+  const safe = Math.max(0, Math.round(seconds));
+  return `${Math.floor(safe / 60).toString().padStart(2, "0")}:${(safe % 60).toString().padStart(2, "0")}`;
+};
 
 function App() {
   const [projects, setProjects] = useState<StoryProject[]>(() => loadProjects());
@@ -29,6 +34,7 @@ function App() {
   const [playing, setPlaying] = useState(false);
   const [paused, setPaused] = useState(false);
   const [sceneProgress, setSceneProgress] = useState(0);
+  const [seekPreview, setSeekPreview] = useState<number | null>(null);
   const [masterVolume, setMasterVolume] = useState(0.82);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
@@ -71,11 +77,14 @@ function App() {
     narrationAudio.preload = "auto";
     mixerRef.current = mixer;
     narrationAudioRef.current = narrationAudio;
-    void getCloudUser().then((user) => setUserEmail(user?.email ?? null));
+    void getCloudUser().then((user) => {
+      setUserEmail(user?.email ?? null);
+      if (user) setAnalysisMode("cloud");
+    });
     void (async () => {
       const remote = await loadRemoteMusicTracks();
       let catalog = remote;
-      const catalogUrl = import.meta.env.VITE_MUSIC_CATALOG_URL as string | undefined;
+      const catalogUrl = (import.meta.env.VITE_MUSIC_CATALOG_URL as string | undefined) ?? "./music-catalog.json";
       if (!catalog.length && catalogUrl) {
         try {
           const response = await fetch(catalogUrl);
@@ -148,7 +157,9 @@ function App() {
       let cues: SceneCue[];
       if (analysisMode === "cloud") {
         if (!isCloudConfigured || !userEmail) throw new Error("請先完成雲端設定並登入");
-        cues = await analyzeInCloud(current.body, current.style);
+        const result = await analyzeInCloud(current.body, current.style);
+        cues = result.scenes;
+        if (result.model) setNarrationStage(`OpenAI ${result.model} · 配樂分析完成`);
       } else {
         await new Promise((resolve) => window.setTimeout(resolve, 520));
         cues = analyzeStory(current.body, current.style);
@@ -221,7 +232,7 @@ function App() {
     return promise;
   }, []);
 
-  const speakScene = useCallback(async (index: number) => {
+  const speakScene = useCallback(async (index: number, startProgress = 0) => {
     const project = projectRef.current;
     const scene = project?.cues[index];
     if (!scene || stoppedRef.current) {
@@ -229,8 +240,9 @@ function App() {
       mixerRef.current?.stop(1.4);
       return;
     }
+    const safeStartProgress = Math.min(0.995, Math.max(0, startProgress));
     setSelectedScene(index);
-    setSceneProgress(0);
+    setSceneProgress(safeStartProgress);
     const token = playbackTokenRef.current;
     const track = getTrack(scene.musicTrackId, tracksRef.current);
     try { await mixerRef.current?.transition(track, scene.transitionSeconds, scene.musicLevel); }
@@ -260,6 +272,7 @@ function App() {
       if (!audio) return;
       activeNarrationRef.current = "cloud";
       speechSynthesis.cancel();
+      audio.onloadedmetadata = null;
       audio.src = naturalVoice.url;
       audio.playbackRate = 1;
       audio.ontimeupdate = () => setSceneProgress(audio.duration ? Math.min(1, audio.currentTime / audio.duration) : 0);
@@ -271,7 +284,18 @@ function App() {
         if (!stoppedRef.current) { setPlaying(false); mixerRef.current?.stop(); notify("自然語音音檔載入失敗", "warn"); }
       };
       setNarrationStage(`${providerLabel(naturalVoice.provider)} · ${naturalVoice.cacheHit ? "快取旁白" : "AI 生成旁白"}`);
-      try { await audio.play(); }
+      try {
+        if (safeStartProgress > 0) {
+          if (!Number.isFinite(audio.duration)) {
+            await new Promise<void>((resolve, reject) => {
+              audio.onloadedmetadata = () => resolve();
+              audio.addEventListener("error", () => reject(new Error("自然語音音檔載入失敗")), { once: true });
+            });
+          }
+          audio.currentTime = Math.min(Math.max(0, audio.duration - 0.05), audio.duration * safeStartProgress);
+        }
+        await audio.play();
+      }
       catch { notify("瀏覽器阻擋了自然語音播放，請再按一次播放", "warn"); setPlaying(false); return; }
       const next = project.cues[index + 1];
       if (next && settings.provider !== "system") void prepareNarration(project, next, settings.provider).catch(() => undefined);
@@ -280,13 +304,14 @@ function App() {
 
     activeNarrationRef.current = "system";
     setNarrationStage("裝置語音 · 自動保底");
-    const utterance = new SpeechSynthesisUtterance(scene.text);
+    const startCharacter = Math.min(Math.max(0, scene.text.length - 1), Math.floor(scene.text.length * safeStartProgress));
+    const utterance = new SpeechSynthesisUtterance(scene.text.slice(startCharacter));
     utterance.lang = "zh-TW";
     utterance.rate = scene.narrationRate;
     const voice = speechSynthesis.getVoices().find((item) => item.lang.toLowerCase().includes("zh-tw"))
       ?? speechSynthesis.getVoices().find((item) => item.lang.toLowerCase().startsWith("zh"));
     if (voice) utterance.voice = voice;
-    utterance.onboundary = (event) => setSceneProgress(Math.min(1, event.charIndex / Math.max(1, scene.text.length)));
+    utterance.onboundary = (event) => setSceneProgress(Math.min(1, (startCharacter + event.charIndex) / Math.max(1, scene.text.length)));
     utterance.onend = () => {
       setSceneProgress(1);
       if (!stoppedRef.current) void speakScene(index + 1);
@@ -297,15 +322,16 @@ function App() {
     speechSynthesis.speak(utterance);
   }, [notify, prepareNarration]);
 
-  const playFrom = (index = selectedScene) => {
+  const playFrom = (index = selectedScene, startProgress?: number) => {
     if (!current.cues.length) return notify("請先分析故事，建立場景配樂", "warn");
+    const requestedProgress = startProgress ?? (index === selectedScene ? sceneProgress : 0);
     stoppedRef.current = false;
     playbackTokenRef.current += 1;
     speechSynthesis.cancel();
     narrationAudioRef.current?.pause();
     setPlaying(true);
     setPaused(false);
-    void speakScene(index);
+    void speakScene(index, requestedProgress);
   };
 
   const togglePause = () => {
@@ -326,6 +352,38 @@ function App() {
     if (!selected) return;
     try { await mixerRef.current?.transition(getTrack(selected.musicTrackId, tracksRef.current), selected.transitionSeconds, selected.musicLevel); }
     catch { notify("按播放即可啟用聲音", "warn"); }
+  };
+
+  const seekToProgress = (percentage: number) => {
+    if (!current.cues.length) return;
+    const durations = current.cues.map(estimateCueSeconds);
+    const total = durations.reduce((sum, duration) => sum + duration, 0);
+    const targetSeconds = Math.min(total - 0.05, Math.max(0, total * (percentage / 100)));
+    let elapsed = 0;
+    let targetIndex = current.cues.length - 1;
+    for (let index = 0; index < durations.length; index += 1) {
+      if (targetSeconds < elapsed + durations[index]) { targetIndex = index; break; }
+      elapsed += durations[index];
+    }
+    const targetSceneProgress = Math.min(0.995, Math.max(0, (targetSeconds - elapsed) / durations[targetIndex]));
+    const shouldContinue = playing && !paused;
+    stoppedRef.current = true;
+    playbackTokenRef.current += 1;
+    speechSynthesis.cancel();
+    narrationAudioRef.current?.pause();
+    mixerRef.current?.stop(0.25);
+    setSelectedScene(targetIndex);
+    setSceneProgress(targetSceneProgress);
+    setPaused(false);
+    if (shouldContinue) {
+      stoppedRef.current = false;
+      playbackTokenRef.current += 1;
+      setPlaying(true);
+      void speakScene(targetIndex, targetSceneProgress);
+    } else {
+      setPlaying(false);
+      setNarrationStage(`已定位第 ${targetIndex + 1} 幕 · ${formatClock(targetSeconds)}`);
+    }
   };
 
   const sendMagicLink = async () => {
@@ -397,10 +455,15 @@ function App() {
   };
 
   const wordCount = current?.body.replace(/\s/g, "").length ?? 0;
-  const globalProgress = useMemo(() => {
-    if (!current?.cues.length) return 0;
-    return ((selectedScene + sceneProgress) / current.cues.length) * 100;
-  }, [current?.cues.length, selectedScene, sceneProgress]);
+  const timeline = useMemo(() => {
+    const durations = current?.cues.map(estimateCueSeconds) ?? [];
+    const total = durations.reduce((sum, duration) => sum + duration, 0);
+    const elapsed = durations.slice(0, selectedScene).reduce((sum, duration) => sum + duration, 0)
+      + (durations[selectedScene] ?? 0) * sceneProgress;
+    return { total, elapsed, progress: total ? (elapsed / total) * 100 : 0 };
+  }, [current?.cues, selectedScene, sceneProgress]);
+  const displayedProgress = seekPreview ?? timeline.progress;
+  const displayedElapsed = timeline.total * (displayedProgress / 100);
 
   if (!current) return null;
 
@@ -463,8 +526,8 @@ function App() {
           {view === "script" ? (
             <>
               <div className="director-bar">
-                <div className="style-select">
-                  <span>演繹方式</span>
+                <div className="style-select" title={STORY_STYLE_DESCRIPTIONS[current.style]}>
+                  <span>導演風格</span>
                   <select value={current.style} onChange={(event) => { updateCurrent({ style: event.target.value as StoryStyle }); setDirty(true); }}>
                     {styles.map((style) => <option key={style}>{style}</option>)}
                   </select>
@@ -472,12 +535,16 @@ function App() {
                 </div>
                 <div className="mode-choice" title="雲端未設定時會自動使用本機分析">
                   <button className={analysisMode === "local" ? "active" : ""} onClick={() => setAnalysisMode("local")}>本機</button>
-                  <button disabled={!isCloudConfigured || !userEmail} className={analysisMode === "cloud" ? "active" : ""} onClick={() => setAnalysisMode("cloud")}>雲端 AI</button>
+                  <button disabled={!isCloudConfigured || !userEmail} className={analysisMode === "cloud" ? "active" : ""} onClick={() => setAnalysisMode("cloud")} title="由 Supabase 後端安全呼叫 OpenAI">OpenAI</button>
                 </div>
                 <button className="analyze-button" disabled={analyzing} onClick={() => void runAnalysis()}>
                   {analyzing ? <LoaderCircle className="spin" size={17} /> : <WandSparkles size={17} />}
                   {analyzing ? "正在讀懂情節…" : dirty ? "重新設計配樂" : "分析並設計配樂"}
                 </button>
+              </div>
+              <div className="director-context">
+                <span><Sparkles size={14} /><b>{current.style}</b>{STORY_STYLE_DESCRIPTIONS[current.style]}</span>
+                <span>{analysisMode === "cloud" ? "OpenAI 會分析分幕、情緒、張力與選曲線索" : "本機規則分析，不會呼叫外部 AI"}</span>
               </div>
               <div className="editor-toolbar">
                 <span>{dirty ? "文字已變更，建議重新分析" : "場景與配樂已同步"}</span>
@@ -590,7 +657,25 @@ function App() {
             <button onClick={stopPlayback}><Square size={14} fill="currentColor" /></button>
             <button disabled={selectedScene >= current.cues.length - 1} onClick={() => playFrom(Math.min(current.cues.length - 1, selectedScene + 1))}><SkipForward size={17} fill="currentColor" /></button>
           </div>
-          <div className="progress-row"><span>{String(selectedScene + 1).padStart(2, "0")}</span><div className="progress"><i style={{ width: `${globalProgress}%` }} /></div><span>{String(current.cues.length).padStart(2, "0")}</span></div>
+          <div className="progress-row">
+            <span>{formatClock(displayedElapsed)}</span>
+            <input
+              aria-label="故事播放時間軸"
+              type="range"
+              min="0"
+              max="100"
+              step="0.1"
+              disabled={!current.cues.length}
+              value={displayedProgress}
+              title={`拖曳或點選跳到 ${formatClock(displayedElapsed)}`}
+              style={{ background: `linear-gradient(90deg, var(--amber) 0 ${displayedProgress}%, #343934 ${displayedProgress}% 100%)` }}
+              onChange={(event) => setSeekPreview(Number(event.target.value))}
+              onPointerUp={(event) => { seekToProgress(Number(event.currentTarget.value)); setSeekPreview(null); }}
+              onKeyUp={(event) => { if (["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key)) { seekToProgress(Number(event.currentTarget.value)); setSeekPreview(null); } }}
+              onBlur={(event) => { if (seekPreview !== null) { seekToProgress(Number(event.currentTarget.value)); setSeekPreview(null); } }}
+            />
+            <span>{formatClock(timeline.total)}</span>
+          </div>
         </div>
         <div className="master-volume"><Volume2 size={17} /><input aria-label="主音量" type="range" min="0" max="1" step="0.01" value={masterVolume} onChange={(event) => { const value = Number(event.target.value); setMasterVolume(value); mixerRef.current?.setMasterVolume(value); }} /><span>{Math.round(masterVolume * 100)}</span></div>
       </footer>

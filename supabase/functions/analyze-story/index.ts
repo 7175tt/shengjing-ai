@@ -64,18 +64,20 @@ Deno.serve(async (request) => {
     if (typeof story !== "string" || story.trim().length < 80) throw new Error("故事至少需要 80 字");
     if (story.length > 8000) throw new Error("單次分析上限為 8,000 字");
 
+    const model = Deno.env.get("OPENAI_MODEL") ?? "gpt-5.6-luna";
+    const requestBody: Record<string, unknown> = {
+      model,
+      input: [
+        { role: "system", content: [{ type: "input_text", text: "你是通用的文章聲音導演。來文可能是愛情、日常、喜劇、懸疑、恐怖、科幻、歷史、兒童、療癒、散文、紀實或任何題材，不得預設為英雄或逆境故事。將全文依真正的敘事轉折切成 3 至 8 幕，必須原文完整、不重複、不遺漏。曲庫代碼 calm、remembrance、dark、march、legend 只是相容用的音樂氣質；真正選曲會由後端曲庫依 mood 與 matchedKeywords 再配對。matchedKeywords 應同時包含可用於選曲的情緒、空間、節奏或題材詞。不要每幕都換歌；重要主題應延續，轉場需依情節選擇漸入、交疊、漸強或切點。導演風格規則：自動判讀依原文決定；忠實原文降低額外渲染；電影感放大轉折與動態；溫柔細膩放慢並降低侵入感；克制敘事收斂情緒、音量與轉場。輸出繁體中文。" }] },
+        { role: "user", content: [{ type: "input_text", text: `導演風格：${style}\n\n文章全文：\n${story}` }] },
+      ],
+      text: { format: { type: "json_schema", name: "story_cue_sheet", strict: true, schema } },
+    };
+    if (model.startsWith("gpt-5")) requestBody.reasoning = { effort: "low" };
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5.6-luna",
-        reasoning: { effort: "low" },
-        input: [
-          { role: "system", content: [{ type: "input_text", text: "你是通用的文章聲音導演。來文可能是愛情、日常、喜劇、懸疑、恐怖、科幻、歷史、兒童、療癒、散文、紀實或任何題材，不得預設為英雄或逆境故事。將全文依真正的敘事轉折切成 3 至 8 幕，必須原文完整、不重複、不遺漏。曲庫只有 calm、remembrance、dark、march、legend，這些只是音樂氣質，不是故事類型。不要每幕都換歌；重要主題應延續，轉場需依情節選擇漸入、交疊、漸強或切點。輸出繁體中文。" }] },
-          { role: "user", content: [{ type: "input_text", text: `演繹方式：${style}\n\n文章全文：\n${story}` }] },
-        ],
-        text: { format: { type: "json_schema", name: "story_cue_sheet", strict: true, schema } },
-      }),
+      body: JSON.stringify(requestBody),
     });
     const raw = await response.json();
     if (!response.ok) throw new Error(raw?.error?.message ?? `OpenAI API error ${response.status}`);
@@ -88,7 +90,7 @@ Deno.serve(async (request) => {
       cursor = startOffset + text.length;
       return { ...scene, id: `scene-${index + 1}`, index, startOffset, endOffset: cursor };
     });
-    return new Response(JSON.stringify({ scenes }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ scenes, provider: "openai", model }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
