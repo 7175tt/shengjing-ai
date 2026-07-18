@@ -1,12 +1,13 @@
 # 聲境 AI｜小說配樂導演台
 
-把一篇小說轉成「朗讀 + 動態配樂」的完整網頁工具。系統會辨識場景、情緒、張力與敘事功能，建立逐幕配樂表，朗讀時以雙音軌交叉淡化切換音樂。
+把任意題材的文章轉成「自然朗讀 + 動態配樂」的完整網頁工具。系統會辨識場景、情緒、張力與敘事功能，不預設英雄或逆境主題，建立逐幕聲音與配樂表。
 
 ## 已完成的正式版功能
 
 - 作品庫：建立、匯入 `.txt` / `.md`、自動保存與切換作品。
 - 場景導演：本機零設定分析；設定 Supabase 後可使用 OpenAI 結構化輸出分析。
-- 朗讀混音：瀏覽器繁中語音、場景同步、暫停／續播／跳幕與主音量。
+- 自然朗讀：優先使用 OpenAI GPT-4o mini TTS，依場景調整語氣、節奏與停頓；失敗時可回退瀏覽器繁中語音。
+- 朗讀混音：場景同步、暫停／續播／跳幕、主音量與下一幕預先生成。
 - 平滑轉場：漸入、交叉淡化、主題延續漸強、情節切點；每幕可人工微調。
 - 安全曲庫：內建 5 首 CC0 配樂，來源與作者完整揭露於 `public/audio/CREDITS.md`。
 - 可攜資料：匯出帶場景、情緒與混音參數的 JSON 配樂表。
@@ -32,7 +33,7 @@ npm run preview
 
 1. GitHub Pages：公開前端與 CC0 音樂。
 2. Supabase Auth + Postgres：Email magic link 與私人作品庫（RLS 隔離）。
-3. Supabase Edge Function：代管 OpenAI 金鑰並呼叫 Responses API。
+3. Supabase Edge Function：代管 OpenAI 金鑰，呼叫 Responses API 與 Audio Speech API，並將私人旁白快取存入 Storage。
 
 ## 啟用 Supabase（選配）
 
@@ -42,8 +43,9 @@ npm run preview
 
    ```powershell
    supabase link --project-ref <PROJECT_REF>
-   supabase secrets set OPENAI_API_KEY=<YOUR_KEY> OPENAI_MODEL=gpt-5.6-luna
+   supabase secrets set OPENAI_API_KEY=<YOUR_KEY> OPENAI_TTS_MODEL=gpt-4o-mini-tts OPENAI_TTS_VOICE=cedar
    supabase functions deploy analyze-story
+   supabase functions deploy narrate-scene
    ```
 
 4. 在 GitHub Repository → Settings → Secrets and variables → Actions → Variables 加入：
@@ -54,6 +56,8 @@ npm run preview
 5. 在 Supabase Auth URL Configuration 加入正式 GitHub Pages URL 作為 Redirect URL。
 
 > `OPENAI_API_KEY` 只放在 Supabase secret，絕對不要命名為 `VITE_OPENAI_API_KEY` 或提交到 Git。
+
+> OpenAI 合成聲音在介面中會明確標示為 AI 生成。正式朗讀須先以 Email magic link 登入，避免公開網頁被濫用產生 API 費用。
 
 ## 發布
 

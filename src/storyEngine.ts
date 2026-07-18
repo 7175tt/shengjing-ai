@@ -21,30 +21,23 @@ export const MUSIC_LIBRARY: MusicTrack[] = [
 ];
 
 const keywordSets: Record<NarrativeMood, string[]> = {
-  calm: ["平靜", "安靜", "月", "星", "微風", "溫柔", "沉默", "等待", "遠方", "清晨"],
-  sorrow: ["敗", "失去", "死", "傷", "雨", "灰燼", "孤", "破舊", "往事", "倒下", "眼淚"],
-  dark: ["黑", "夜", "威脅", "逼近", "恐懼", "逃", "廢棄", "熄滅", "陰影", "敵軍", "秘密"],
-  crisis: ["戰", "箭", "刀", "劍", "衝", "湧", "撞", "危", "追", "火", "號角", "鐵騎"],
-  rise: ["但是", "卻", "抬起頭", "重新", "不再", "誓言", "守護", "醒來", "站起", "決定", "晨光"],
-  triumph: ["勝利", "後退", "英雄", "希望", "陽光", "凱旋", "旗幟", "明天", "鐘聲", "喊出"],
+  calm: ["平靜", "安靜", "微風", "溫柔", "日常", "咖啡", "笑", "家", "朋友", "喜歡", "擁抱", "旅行", "午後", "孩子"],
+  sorrow: ["失去", "死", "傷", "離別", "遺憾", "思念", "雨", "灰燼", "孤單", "往事", "眼淚", "再見"],
+  dark: ["黑", "夜", "威脅", "恐懼", "廢棄", "陰影", "秘密", "陌生", "腳步", "門後", "真相", "失蹤"],
+  crisis: ["戰", "箭", "刀", "劍", "衝", "撞", "危險", "追趕", "爆炸", "警鈴", "倒數", "下降", "火災"],
+  rise: ["卻", "抬起頭", "重新", "不再", "理解", "原來", "終於", "醒來", "站起", "決定", "希望", "開始"],
+  triumph: ["勝利", "成功", "完成", "團聚", "釋然", "歡呼", "凱旋", "陽光", "明天", "真相大白", "自由"],
 };
 
 type Defaults = Pick<SceneCue, "moodLabel" | "narrativeFunction" | "valence" | "arousal" | "tension" | "musicTrackId" | "musicLevel" | "narrationRate">;
 
 const moodDefaults: Record<NarrativeMood, Defaults> = {
   calm: { moodLabel: "靜候", narrativeFunction: "建立世界", valence: 0.15, arousal: 0.22, tension: 0.18, musicTrackId: "calm", musicLevel: 0.16, narrationRate: 0.9 },
-  sorrow: { moodLabel: "低谷", narrativeFunction: "揭露創傷", valence: -0.72, arousal: 0.28, tension: 0.42, musicTrackId: "remembrance", musicLevel: 0.15, narrationRate: 0.84 },
+  sorrow: { moodLabel: "沉澱", narrativeFunction: "承接情感", valence: -0.72, arousal: 0.28, tension: 0.42, musicTrackId: "remembrance", musicLevel: 0.15, narrationRate: 0.84 },
   dark: { moodLabel: "陰影逼近", narrativeFunction: "累積威脅", valence: -0.58, arousal: 0.48, tension: 0.72, musicTrackId: "dark", musicLevel: 0.18, narrationRate: 0.88 },
-  crisis: { moodLabel: "迎戰", narrativeFunction: "正面衝突", valence: -0.08, arousal: 0.9, tension: 0.92, musicTrackId: "march", musicLevel: 0.2, narrationRate: 1.02 },
-  rise: { moodLabel: "覺醒", narrativeFunction: "意志轉折", valence: 0.48, arousal: 0.68, tension: 0.62, musicTrackId: "legend", musicLevel: 0.19, narrationRate: 0.94 },
-  triumph: { moodLabel: "英雄再起", narrativeFunction: "情緒兌現", valence: 0.86, arousal: 0.76, tension: 0.24, musicTrackId: "legend", musicLevel: 0.22, narrationRate: 0.9 },
-};
-
-const arcs: Record<StoryStyle, NarrativeMood[]> = {
-  "逆境再起": ["sorrow", "dark", "crisis", "rise", "crisis", "triumph"],
-  "英雄征途": ["calm", "rise", "crisis", "crisis", "triumph", "triumph"],
-  "懸疑暗湧": ["calm", "dark", "dark", "crisis", "dark", "rise"],
-  "克制敘事": ["calm", "sorrow", "dark", "rise", "calm", "triumph"],
+  crisis: { moodLabel: "高張力", narrativeFunction: "推進行動", valence: -0.08, arousal: 0.9, tension: 0.92, musicTrackId: "march", musicLevel: 0.2, narrationRate: 1.02 },
+  rise: { moodLabel: "轉折", narrativeFunction: "情緒轉向", valence: 0.48, arousal: 0.68, tension: 0.62, musicTrackId: "legend", musicLevel: 0.19, narrationRate: 0.94 },
+  triumph: { moodLabel: "明亮釋放", narrativeFunction: "收束情緒", valence: 0.86, arousal: 0.76, tension: 0.24, musicTrackId: "legend", musicLevel: 0.22, narrationRate: 0.9 },
 };
 
 const clamp = (value: number, minimum = -1, maximum = 1) => Math.min(maximum, Math.max(minimum, value));
@@ -79,13 +72,10 @@ function segmentStory(source: string) {
 
 const keywordMatches = (text: string, mood: NarrativeMood) => keywordSets[mood].filter((keyword) => text.includes(keyword));
 
-function inferMood(text: string, index: number, count: number, style: StoryStyle) {
-  const arc = arcs[style];
-  const arcIndex = count === 1 ? 0 : Math.round((index / (count - 1)) * (arc.length - 1));
-  const prior = arc[arcIndex];
+function inferMood(text: string) {
   const scores = (Object.keys(keywordSets) as NarrativeMood[]).map((mood) => ({ mood, count: keywordMatches(text, mood).length }));
   const strongest = scores.sort((a, b) => b.count - a.count)[0];
-  return strongest.count >= 3 || (strongest.count >= 2 && strongest.mood !== "calm") ? strongest.mood : prior;
+  return strongest.count > 0 ? strongest.mood : "calm";
 }
 
 function transitionFor(current: NarrativeMood, previous?: NarrativeMood): Pick<SceneCue, "transitionType" | "transitionLabel" | "transitionSeconds"> {
@@ -104,8 +94,8 @@ export function analyzeStory(source: string, style: StoryStyle): SceneCue[] {
     const startOffset = source.indexOf(text, cursor);
     const safeStart = startOffset >= 0 ? startOffset : cursor;
     cursor = safeStart + text.length;
-    const mood = inferMood(text, index, segments.length, style);
-    const previousMood = index > 0 ? inferMood(segments[index - 1], index - 1, segments.length, style) : undefined;
+    const mood = inferMood(text);
+    const previousMood = index > 0 ? inferMood(segments[index - 1]) : undefined;
     const defaults = moodDefaults[mood];
     const transition = transitionFor(mood, previousMood);
     const matchedKeywords = keywordMatches(text, mood).slice(0, 5);
@@ -113,7 +103,7 @@ export function analyzeStory(source: string, style: StoryStyle): SceneCue[] {
     const excerpt = first.length > 15 ? `${first.slice(0, 15)}…` : first;
     const reason = matchedKeywords.length
       ? `偵測到「${matchedKeywords.join("、")}」等敘事線索，安排${defaults.moodLabel}的聲音方向。`
-      : `依照「${style}」的情緒弧線與本段位置，安排${defaults.moodLabel}的聲音方向。`;
+      : `本段沒有強制套用類型公式，以「${style}」的中性聲音方向忠實處理。`;
     return {
       id: `scene-${index + 1}`,
       index,
@@ -132,7 +122,23 @@ export function analyzeStory(source: string, style: StoryStyle): SceneCue[] {
   });
 }
 
-export const getTrack = (trackId: string) => MUSIC_LIBRARY.find((track) => track.id === trackId) ?? MUSIC_LIBRARY[0];
+export function assignMusicTracks(cues: SceneCue[], tracks: MusicTrack[]) {
+  let previousId = "";
+  return cues.map((cue) => {
+    const candidates = tracks.filter((track) => track.moods.includes(cue.mood));
+    const pool = candidates.length ? candidates : tracks;
+    const scored = pool.map((track) => ({
+      track,
+      score: track.tags.filter((tag) => cue.text.includes(tag) || cue.matchedKeywords.includes(tag)).length,
+    })).sort((a, b) => b.score - a.score);
+    const alternatives = scored.filter(({ track }) => track.id !== previousId);
+    const selected = (alternatives.length ? alternatives : scored)[cue.index % Math.max(1, (alternatives.length ? alternatives : scored).length)]?.track;
+    previousId = selected?.id ?? cue.musicTrackId;
+    return selected ? { ...cue, musicTrackId: selected.id } : cue;
+  });
+}
+
+export const getTrack = (trackId: string, tracks: MusicTrack[] = MUSIC_LIBRARY) => tracks.find((track) => track.id === trackId) ?? tracks[0] ?? MUSIC_LIBRARY[0];
 
 export const moodColor: Record<NarrativeMood, string> = {
   calm: "#85a8a0", sorrow: "#9294a5", dark: "#716f7e", crisis: "#c67554", rise: "#d6a54b", triumph: "#edbf5e",

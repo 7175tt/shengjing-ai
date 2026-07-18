@@ -60,7 +60,7 @@ Deno.serve(async (request) => {
   try {
     const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
-    const { story, style = "逆境再起" } = await request.json();
+    const { story, style = "自動判讀" } = await request.json();
     if (typeof story !== "string" || story.trim().length < 80) throw new Error("故事至少需要 80 字");
     if (story.length > 8000) throw new Error("單次分析上限為 8,000 字");
 
@@ -71,8 +71,8 @@ Deno.serve(async (request) => {
         model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5.6-luna",
         reasoning: { effort: "low" },
         input: [
-          { role: "system", content: [{ type: "input_text", text: "你是小說配樂導演。將完整小說依真正的敘事轉折切成 3 至 8 幕，必須原文完整、不重複、不遺漏。曲庫只有 calm、remembrance、dark、march、legend。不要每幕都換歌；重要主題應延續，轉場需依情節選擇漸入、交疊、漸強或切點。輸出繁體中文。" }] },
-          { role: "user", content: [{ type: "input_text", text: `偏好情緒弧線：${style}\n\n小說全文：\n${story}` }] },
+          { role: "system", content: [{ type: "input_text", text: "你是通用的文章聲音導演。來文可能是愛情、日常、喜劇、懸疑、恐怖、科幻、歷史、兒童、療癒、散文、紀實或任何題材，不得預設為英雄或逆境故事。將全文依真正的敘事轉折切成 3 至 8 幕，必須原文完整、不重複、不遺漏。曲庫只有 calm、remembrance、dark、march、legend，這些只是音樂氣質，不是故事類型。不要每幕都換歌；重要主題應延續，轉場需依情節選擇漸入、交疊、漸強或切點。輸出繁體中文。" }] },
+          { role: "user", content: [{ type: "input_text", text: `演繹方式：${style}\n\n文章全文：\n${story}` }] },
         ],
         text: { format: { type: "json_schema", name: "story_cue_sheet", strict: true, schema } },
       }),

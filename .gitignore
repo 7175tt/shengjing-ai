@@ -4,5 +4,6 @@ site/
 .env
 .env.local
 .playwright-cli/
+supabase/.temp/
 output/
 *.log

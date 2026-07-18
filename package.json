@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "build": "tsc --noEmit && node scripts/build.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "music:migrate": "node scripts/migrate-music.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.52.1",
@@ -15,6 +16,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1089.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",

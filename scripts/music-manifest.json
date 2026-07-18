@@ -1,0 +1,7 @@
+[
+  { "id": "calm", "fileName": "calm.mp3", "title": "Calm Loop", "author": "wipics", "moods": ["calm"], "tags": ["平靜", "環境", "留白"], "license": "CC0", "sourceUrl": "https://opengameart.org/content/calm-loop", "sortOrder": 10 },
+  { "id": "remembrance", "fileName": "remembrance.ogg", "title": "Remembrance Loop", "author": "beardalaxy", "moods": ["sorrow"], "tags": ["低谷", "回憶", "沉鬱"], "license": "CC0", "sourceUrl": "https://opengameart.org/content/remembrance-loop", "sortOrder": 20 },
+  { "id": "dark", "fileName": "dark.mp3", "title": "Dark Things Loop", "author": "iamoneabe", "moods": ["dark"], "tags": ["陰影", "威脅", "懸念"], "license": "CC0", "sourceUrl": "https://opengameart.org/content/dark-things-loop", "sortOrder": 30 },
+  { "id": "march", "fileName": "epic-march.wav", "title": "Epic March Loop", "author": "Eldritch Grim", "moods": ["crisis"], "tags": ["戰鬥", "逼近", "高張力"], "license": "CC0", "sourceUrl": "https://opengameart.org/content/epic-march-loop", "sortOrder": 40 },
+  { "id": "legend", "fileName": "legend-will-rise.mp3", "title": "A Legend Will Rise", "author": "CodeManu", "moods": ["rise", "triumph"], "tags": ["覺醒", "英雄", "再起"], "license": "CC0", "sourceUrl": "https://opengameart.org/content/a-legend-will-rise-orchestral", "sortOrder": 50 }
+]

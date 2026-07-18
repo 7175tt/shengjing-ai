@@ -1,10 +1,10 @@
-import type { StoryProject, StoryStyle } from "./types";
+import { normalizeStoryStyle, type StoryProject, type StoryStyle } from "./types";
 import { analyzeStory, DEMO_STORY } from "./storyEngine";
 
 const STORAGE_KEY = "shengjing-ai-projects-v1";
 const CURRENT_KEY = "shengjing-ai-current-project";
 
-export function newProject(title = "白狼歸城", body = DEMO_STORY, style: StoryStyle = "逆境再起"): StoryProject {
+export function newProject(title = "白狼歸城", body = DEMO_STORY, style: StoryStyle = "自動判讀"): StoryProject {
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(), title, body, style, cues: analyzeStory(body, style),
@@ -17,7 +17,10 @@ export function loadProjects(): StoryProject[] {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const projects = JSON.parse(stored) as StoryProject[];
-      if (projects.length) return projects;
+      if (projects.length) return projects.map((project) => {
+        const style = normalizeStoryStyle(project.style);
+        return project.style === style ? project : { ...project, style, cues: analyzeStory(project.body, style) };
+      });
     }
   } catch { /* corrupted storage starts fresh */ }
   const demo = newProject();

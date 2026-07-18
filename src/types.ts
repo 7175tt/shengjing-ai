@@ -1,6 +1,19 @@
-export type StoryStyle = "逆境再起" | "英雄征途" | "懸疑暗湧" | "克制敘事";
+export const STORY_STYLES = ["自動判讀", "忠實原文", "電影感", "溫柔細膩", "克制敘事"] as const;
+
+export type StoryStyle = typeof STORY_STYLES[number];
+
+export function normalizeStoryStyle(value: unknown): StoryStyle {
+  return STORY_STYLES.includes(value as StoryStyle) ? value as StoryStyle : "自動判讀";
+}
 
 export type NarrativeMood = "calm" | "sorrow" | "dark" | "crisis" | "rise" | "triumph";
+
+export type NarrationProvider = "system" | "openai" | "elevenlabs" | "minimax";
+
+export interface NarrationSettings {
+  provider: NarrationProvider;
+  autoFallback: boolean;
+}
 
 export interface MusicTrack {
   id: string;
@@ -9,8 +22,11 @@ export interface MusicTrack {
   file: string;
   moods: NarrativeMood[];
   tags: string[];
-  license: "CC0";
+  license: string;
   sourceUrl: string;
+  storageProvider?: "local" | "supabase" | "r2";
+  objectKey?: string;
+  durationSeconds?: number;
 }
 
 export interface SceneCue {
