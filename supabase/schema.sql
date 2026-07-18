@@ -68,6 +68,10 @@ drop policy if exists "owners can read narration cache" on public.narration_asse
 create policy "owners can read narration cache" on public.narration_assets
   for select using (auth.uid() = owner_id);
 
+-- Edge Function 以 service_role 維護私人快取索引；登入使用者只能讀取自己的資料。
+grant select on table public.narration_assets to authenticated;
+grant select, insert, update, delete on table public.narration_assets to service_role;
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('narration-cache', 'narration-cache', false, 26214400, array['audio/mpeg'])
 on conflict (id) do update set public = excluded.public,
