@@ -18,9 +18,13 @@ export type NarrativeMood = "calm" | "sorrow" | "dark" | "crisis" | "rise" | "tr
 
 export type NarrationProvider = "system" | "openai" | "elevenlabs" | "minimax";
 
+export type OpenAIVoice = "alloy" | "ash" | "ballad" | "coral" | "echo" | "fable" | "nova" | "onyx" | "sage" | "shimmer" | "verse" | "marin" | "cedar";
+
 export interface NarrationSettings {
   provider: NarrationProvider;
   autoFallback: boolean;
+  openAiVoice: OpenAIVoice;
+  speed: number;
 }
 
 export interface MusicTrack {

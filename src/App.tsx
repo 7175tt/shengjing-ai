@@ -1,22 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AudioLines, BookOpen, Check, ChevronDown, CircleUserRound, Cloud, CloudOff, Download, FileAudio,
+  AudioLines, BookOpen, Check, ChevronDown, CircleUserRound, Cloud, CloudOff, Download, Eye, EyeOff, FileAudio,
   FilePlus2, Headphones, Library, LoaderCircle, LogIn, LogOut, Menu, Music2,
-  Mic2, Pause, Play, Plus, Save, Server, Settings2, SkipBack, SkipForward, Sparkles, Square,
+  KeyRound, Mic2, Pause, Play, Plus, Save, Server, Settings2, SkipBack, SkipForward, Sparkles, Square,
   Upload, Volume2, WandSparkles, X,
 } from "lucide-react";
 import { SoundtrackMixer } from "./audioEngine";
 import { analyzeInCloud, generateNarration, getCloudUser, isCloudConfigured, loadRemoteMusicTracks, pullCloudProjects, pushCloudProject, signInWithEmail, signOut, type NarrationResult } from "./cloud";
 import { assignMusicTracks, getTrack, moodColor, MUSIC_LIBRARY } from "./storyEngine";
-import { loadNarrationSettings, NARRATION_PROVIDERS, providerLabel, saveNarrationSettings, VOICE_LAB_SAMPLES } from "./narration";
+import { loadNarrationSettings, NARRATION_PROVIDERS, OPENAI_VOICE_OPTIONS, providerLabel, saveNarrationSettings, VOICE_LAB_SAMPLES } from "./narration";
 import { exportCueSheet, loadCurrentProjectId, loadProjects, newProject, saveCurrentProjectId, saveProjects } from "./storage";
-import { STORY_STYLES, STORY_STYLE_DESCRIPTIONS, type AnalysisMode, type MusicTrack, type NarrationProvider, type NarrationSettings, type SceneCue, type StoryProject, type StoryStyle } from "./types";
+import { STORY_STYLES, STORY_STYLE_DESCRIPTIONS, type AnalysisMode, type MusicTrack, type NarrationProvider, type NarrationSettings, type OpenAIVoice, type SceneCue, type StoryProject, type StoryStyle } from "./types";
 import { analyzeStory } from "./storyEngine";
 
 type Toast = { message: string; tone?: "good" | "warn" } | null;
 const styles: readonly StoryStyle[] = STORY_STYLES;
 const formatDate = (date: string) => new Intl.DateTimeFormat("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(date));
-const estimateCueSeconds = (scene: SceneCue) => Math.max(4, scene.text.replace(/\s/g, "").length / Math.max(2.8, 4.15 * scene.narrationRate));
+const effectiveNarrationRate = (sceneRate: number, speed: number) => Math.min(1.5, Math.max(0.5, sceneRate * speed));
+const estimateCueSeconds = (scene: SceneCue, speed = 1) => Math.max(4, scene.text.replace(/\s/g, "").length / Math.max(2.8, 4.15 * effectiveNarrationRate(scene.narrationRate, speed)));
 const formatClock = (seconds: number) => {
   const safe = Math.max(0, Math.round(seconds));
   return `${Math.floor(safe / 60).toString().padStart(2, "0")}:${(safe % 60).toString().padStart(2, "0")}`;
@@ -46,8 +47,12 @@ function App() {
   const [narrationBusy, setNarrationBusy] = useState(false);
   const [narrationStage, setNarrationStage] = useState("等待播放");
   const [labProvider, setLabProvider] = useState<NarrationProvider>(() => loadNarrationSettings().provider);
+  const [labVoice, setLabVoice] = useState<OpenAIVoice>(() => loadNarrationSettings().openAiVoice);
+  const [labSpeed, setLabSpeed] = useState(() => loadNarrationSettings().speed);
   const [labSampleId, setLabSampleId] = useState(VOICE_LAB_SAMPLES[0].id);
   const [labPlaying, setLabPlaying] = useState(false);
+  const [openAiApiKey, setOpenAiApiKey] = useState("");
+  const [showOpenAiApiKey, setShowOpenAiApiKey] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
   const mixerRef = useRef<SoundtrackMixer | null>(null);
   const narrationAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -57,6 +62,7 @@ function App() {
   const projectRef = useRef<StoryProject | null>(null);
   const tracksRef = useRef<MusicTrack[]>(MUSIC_LIBRARY);
   const narrationSettingsRef = useRef<NarrationSettings>(narrationSettings);
+  const openAiApiKeyRef = useRef(openAiApiKey);
   const stoppedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,6 +71,7 @@ function App() {
   projectRef.current = current ?? null;
   tracksRef.current = musicTracks;
   narrationSettingsRef.current = narrationSettings;
+  openAiApiKeyRef.current = openAiApiKey;
 
   const notify = useCallback((message: string, tone: "good" | "warn" = "good") => {
     setToast({ message, tone });
@@ -157,7 +164,7 @@ function App() {
       let cues: SceneCue[];
       if (analysisMode === "cloud") {
         if (!isCloudConfigured || !userEmail) throw new Error("請先完成雲端設定並登入");
-        const result = await analyzeInCloud(current.body, current.style);
+        const result = await analyzeInCloud(current.body, current.style, openAiApiKeyRef.current);
         cues = result.scenes;
         if (result.model) setNarrationStage(`OpenAI ${result.model} · 配樂分析完成`);
       } else {
@@ -206,9 +213,11 @@ function App() {
   };
 
   const prepareNarration = useCallback((project: StoryProject, scene: SceneCue, provider: Exclude<NarrationProvider, "system">) => {
+    const settings = narrationSettingsRef.current;
+    const narrationRate = effectiveNarrationRate(scene.narrationRate, settings.speed);
     const key = JSON.stringify({
       provider, projectId: project.id, sceneId: scene.id, text: scene.text,
-      mood: scene.mood, style: project.style, narrationRate: scene.narrationRate,
+      mood: scene.mood, style: project.style, narrationRate, openAiVoice: settings.openAiVoice,
       previousText: project.cues[scene.index - 1]?.text ?? "",
       nextText: project.cues[scene.index + 1]?.text ?? "",
     });
@@ -221,7 +230,9 @@ function App() {
       provider,
       mood: scene.mood,
       style: project.style,
-      narrationRate: scene.narrationRate,
+      narrationRate,
+      openAiVoice: settings.openAiVoice,
+      openAiApiKey: provider === "openai" ? openAiApiKeyRef.current.trim() || undefined : undefined,
       previousText: project.cues[scene.index - 1]?.text,
       nextText: project.cues[scene.index + 1]?.text,
     }).catch((error) => {
@@ -307,7 +318,7 @@ function App() {
     const startCharacter = Math.min(Math.max(0, scene.text.length - 1), Math.floor(scene.text.length * safeStartProgress));
     const utterance = new SpeechSynthesisUtterance(scene.text.slice(startCharacter));
     utterance.lang = "zh-TW";
-    utterance.rate = scene.narrationRate;
+    utterance.rate = effectiveNarrationRate(scene.narrationRate, settings.speed);
     const voice = speechSynthesis.getVoices().find((item) => item.lang.toLowerCase().includes("zh-tw"))
       ?? speechSynthesis.getVoices().find((item) => item.lang.toLowerCase().startsWith("zh"));
     if (voice) utterance.voice = voice;
@@ -356,7 +367,7 @@ function App() {
 
   const seekToProgress = (percentage: number) => {
     if (!current.cues.length) return;
-    const durations = current.cues.map(estimateCueSeconds);
+    const durations = current.cues.map((scene) => estimateCueSeconds(scene, narrationSettingsRef.current.speed));
     const total = durations.reduce((sum, duration) => sum + duration, 0);
     const targetSeconds = Math.min(total - 0.05, Math.max(0, total * (percentage / 100)));
     let elapsed = 0;
@@ -416,6 +427,27 @@ function App() {
     notify(`正式朗讀已切換為「${providerLabel(provider)}」`);
   };
 
+  const updateOpenAiVoice = (openAiVoice: OpenAIVoice) => {
+    const next = { ...narrationSettings, openAiVoice };
+    setNarrationSettings(next);
+    saveNarrationSettings(next);
+    setLabVoice(openAiVoice);
+  };
+
+  const updateNarrationSpeed = (speed: number) => {
+    const next = { ...narrationSettings, speed };
+    setNarrationSettings(next);
+    saveNarrationSettings(next);
+    setLabSpeed(speed);
+  };
+
+  const applyVoiceLabSettings = () => {
+    const next = { ...narrationSettings, provider: labProvider, openAiVoice: labVoice, speed: labSpeed };
+    setNarrationSettings(next);
+    saveNarrationSettings(next);
+    notify(`已套用 ${providerLabel(labProvider)} · ${labSpeed.toFixed(2)}×`);
+  };
+
   const playVoiceLabSample = async () => {
     const sample = VOICE_LAB_SAMPLES.find((item) => item.id === labSampleId) ?? VOICE_LAB_SAMPLES[0];
     stopPlayback();
@@ -425,7 +457,7 @@ function App() {
       activeNarrationRef.current = "system";
       const utterance = new SpeechSynthesisUtterance(sample.text);
       utterance.lang = "zh-TW";
-      utterance.rate = sample.mood === "sorrow" ? 0.86 : 0.94;
+      utterance.rate = effectiveNarrationRate(sample.mood === "sorrow" ? 0.86 : 0.94, labSpeed);
       const voice = speechSynthesis.getVoices().find((item) => item.lang.toLowerCase().includes("zh-tw"))
         ?? speechSynthesis.getVoices().find((item) => item.lang.toLowerCase().startsWith("zh"));
       if (voice) utterance.voice = voice;
@@ -438,7 +470,10 @@ function App() {
       setNarrationBusy(true);
       const result = await generateNarration({
         text: sample.text, projectId: "voice-lab", sceneId: sample.id, provider: labProvider,
-        mood: sample.mood, style: current.style, narrationRate: sample.mood === "sorrow" ? 0.86 : 0.94,
+        mood: sample.mood, style: current.style,
+        narrationRate: effectiveNarrationRate(sample.mood === "sorrow" ? 0.86 : 0.94, labSpeed),
+        openAiVoice: labVoice,
+        openAiApiKey: labProvider === "openai" ? openAiApiKey.trim() || undefined : undefined,
       });
       const audio = narrationAudioRef.current;
       if (!audio) return;
@@ -456,12 +491,12 @@ function App() {
 
   const wordCount = current?.body.replace(/\s/g, "").length ?? 0;
   const timeline = useMemo(() => {
-    const durations = current?.cues.map(estimateCueSeconds) ?? [];
+    const durations = current?.cues.map((scene) => estimateCueSeconds(scene, narrationSettings.speed)) ?? [];
     const total = durations.reduce((sum, duration) => sum + duration, 0);
     const elapsed = durations.slice(0, selectedScene).reduce((sum, duration) => sum + duration, 0)
       + (durations[selectedScene] ?? 0) * sceneProgress;
     return { total, elapsed, progress: total ? (elapsed / total) * 100 : 0 };
-  }, [current?.cues, selectedScene, sceneProgress]);
+  }, [current?.cues, narrationSettings.speed, selectedScene, sceneProgress]);
   const displayedProgress = seekPreview ?? timeline.progress;
   const displayedElapsed = timeline.total * (displayedProgress / 100);
 
@@ -589,15 +624,29 @@ function App() {
                   </button>
                 ))}
               </div>
+              <div className="voice-control-grid">
+                <label className="voice-select-control">
+                  <span><b>OpenAI 音色</b><small>偏低沉／偏明亮是聽感分類</small></span>
+                  <select disabled={labProvider !== "openai"} value={labVoice} onChange={(event) => setLabVoice(event.target.value as OpenAIVoice)}>
+                    {OPENAI_VOICE_OPTIONS.map((voice) => <option value={voice.id} key={voice.id}>{voice.name} · {voice.tone}{voice.recommended ? "（推薦）" : ""}</option>)}
+                  </select>
+                  <small>中文表現請以實際試聽為準；官方推薦 Cedar 與 Marin。</small>
+                </label>
+                <label className="voice-speed-control">
+                  <span><b>朗讀速度</b><strong>{labSpeed.toFixed(2)}×</strong></span>
+                  <input type="range" min="0.7" max="1.3" step="0.05" value={labSpeed} onChange={(event) => setLabSpeed(Number(event.target.value))} />
+                  <small><i>較慢</i><i>自然</i><i>較快</i></small>
+                </label>
+              </div>
               <div className="voice-lab-actions">
                 <button className="voice-preview-button" disabled={narrationBusy} onClick={() => void playVoiceLabSample()}>
                   {narrationBusy ? <LoaderCircle className="spin" size={17} /> : labPlaying ? <AudioLines size={17} /> : <Play size={17} fill="currentColor" />}
                   {narrationBusy ? "正在生成自然聲音…" : labPlaying ? "正在試聽" : "產生並試聽"}
                 </button>
-                <button className="voice-apply-button" onClick={() => applyNarrationProvider(labProvider)}>
+                <button className="voice-apply-button" onClick={applyVoiceLabSettings}>
                   套用到正式朗讀
                 </button>
-                <span><Server size={14} /> AI 生成聲音會清楚標示，金鑰只保留在後端。</span>
+                <span><Server size={14} /> 自備金鑰僅用於當次請求，不會寫入作品或資料庫。</span>
               </div>
             </div>
           ) : (
@@ -693,10 +742,32 @@ function App() {
               <select value={narrationSettings.provider} onChange={(event) => applyNarrationProvider(event.target.value as NarrationProvider)}>
                 {NARRATION_PROVIDERS.map((provider) => <option value={provider.id} key={provider.id}>{provider.name} · {provider.model}</option>)}
               </select>
+              <select disabled={narrationSettings.provider !== "openai"} aria-label="OpenAI 正式朗讀音色" value={narrationSettings.openAiVoice} onChange={(event) => updateOpenAiVoice(event.target.value as OpenAIVoice)}>
+                {OPENAI_VOICE_OPTIONS.map((voice) => <option value={voice.id} key={voice.id}>{voice.name} · {voice.tone}{voice.recommended ? "（推薦）" : ""}</option>)}
+              </select>
+              <label className="settings-speed"><span>整體語速</span><input type="range" min="0.7" max="1.3" step="0.05" value={narrationSettings.speed} onChange={(event) => updateNarrationSpeed(Number(event.target.value))} /><b>{narrationSettings.speed.toFixed(2)}×</b></label>
               <label><input type="checkbox" checked={narrationSettings.autoFallback} onChange={(event) => {
                 const next = { ...narrationSettings, autoFallback: event.target.checked };
                 setNarrationSettings(next); saveNarrationSettings(next);
               }} /> 雲端聲音失敗時，自動改用裝置語音</label>
+            </div>
+            <div className="api-key-setting">
+              <span><KeyRound size={17} /><b>自備 OpenAI API Key</b><i>{openAiApiKey ? "本分頁已啟用" : "選填"}</i></span>
+              <div>
+                <input
+                  type={showOpenAiApiKey ? "text" : "password"}
+                  value={openAiApiKey}
+                  onChange={(event) => setOpenAiApiKey(event.target.value)}
+                  placeholder="sk-…"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  aria-label="自備 OpenAI API Key"
+                />
+                <button type="button" onClick={() => setShowOpenAiApiKey((value) => !value)} aria-label={showOpenAiApiKey ? "隱藏 API Key" : "顯示 API Key"}>{showOpenAiApiKey ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+                {openAiApiKey && <button type="button" onClick={() => { setOpenAiApiKey(""); setShowOpenAiApiKey(false); }} aria-label="清除 API Key"><X size={17} /></button>}
+              </div>
+              <small>{openAiApiKey ? "分析與 OpenAI 朗讀會優先使用您的金鑰；重新整理後自動清除。" : "留白時使用聲境 AI 後端金鑰。金鑰不會儲存在瀏覽器或資料庫。"}</small>
             </div>
             {!isCloudConfigured ? (
               <div className="setup-note"><b>部署者設定</b><p>在 GitHub 儲存庫加入 <code>VITE_SUPABASE_URL</code> 與 <code>VITE_SUPABASE_ANON_KEY</code>，即可開啟登入、跨裝置同步與雲端 AI 導演。</p></div>
@@ -705,7 +776,7 @@ function App() {
             ) : (
               <div className="login-form"><label>Email 登入連結</label><div><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /><button disabled={cloudBusy} onClick={() => void sendMagicLink()}>{cloudBusy ? <LoaderCircle className="spin" size={16} /> : <LogIn size={16} />} 寄送</button></div><small>免密碼登入。點擊信件連結後即可同步作品。</small></div>
             )}
-            <div className="privacy-row"><CircleUserRound size={17} /><span><b>金鑰隔離</b><small>AI 金鑰只存放在後端 Edge Function，不會下載到瀏覽器。</small></span></div>
+            <div className="privacy-row"><CircleUserRound size={17} /><span><b>金鑰隔離</b><small>平台金鑰只在後端；自備金鑰僅停留於本分頁記憶體，經 Edge Function 完成當次請求後即丟棄。</small></span></div>
           </section>
         </div>
       )}

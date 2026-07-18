@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
-import { normalizeStoryStyle, type MusicTrack, type NarrativeMood, type NarrationProvider, type SceneCue, type StoryProject, type StoryStyle } from "./types";
+import { normalizeStoryStyle, type MusicTrack, type NarrativeMood, type NarrationProvider, type OpenAIVoice, type SceneCue, type StoryProject, type StoryStyle } from "./types";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -26,9 +26,12 @@ export async function signOut() {
   if (error) throw error;
 }
 
-export async function analyzeInCloud(body: string, style: StoryStyle): Promise<{ scenes: SceneCue[]; model?: string }> {
+export async function analyzeInCloud(body: string, style: StoryStyle, openAiApiKey?: string): Promise<{ scenes: SceneCue[]; model?: string }> {
   if (!supabase) throw new Error("尚未設定雲端 AI");
-  const { data, error } = await supabase.functions.invoke("analyze-story", { body: { story: body, style } });
+  const suppliedKey = openAiApiKey?.trim();
+  const { data, error } = await supabase.functions.invoke("analyze-story", {
+    body: { story: body, style, ...(suppliedKey ? { openAiApiKey: suppliedKey } : {}) },
+  });
   if (error) throw error;
   if (!Array.isArray(data?.scenes)) throw new Error("AI 回傳格式不完整");
   return { scenes: data.scenes as SceneCue[], model: typeof data.model === "string" ? data.model : undefined };
@@ -50,6 +53,8 @@ export async function generateNarration(input: {
   mood: NarrativeMood;
   style: StoryStyle;
   narrationRate: number;
+  openAiVoice: OpenAIVoice;
+  openAiApiKey?: string;
   previousText?: string;
   nextText?: string;
 }): Promise<NarrationResult> {

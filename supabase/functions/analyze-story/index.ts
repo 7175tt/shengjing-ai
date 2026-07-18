@@ -58,9 +58,13 @@ function outputText(payload: Record<string, unknown>) {
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
+    const { story, style = "自動判讀", openAiApiKey } = await request.json();
+    const suppliedKey = typeof openAiApiKey === "string" ? openAiApiKey.trim() : "";
+    if (suppliedKey && (suppliedKey.length < 20 || suppliedKey.length > 512 || /\s/.test(suppliedKey))) {
+      throw new Error("自備 OpenAI API Key 格式不正確");
+    }
+    const apiKey = suppliedKey || Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) throw new Error("OPENAI_API_KEY is not configured");
-    const { story, style = "自動判讀" } = await request.json();
     if (typeof story !== "string" || story.trim().length < 80) throw new Error("故事至少需要 80 字");
     if (story.length > 8000) throw new Error("單次分析上限為 8,000 字");
 

@@ -9,6 +9,8 @@ const corsHeaders = {
 type Mood = "calm" | "sorrow" | "dark" | "crisis" | "rise" | "triumph";
 type Provider = "openai" | "elevenlabs" | "minimax";
 
+const openAiVoices = new Set(["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse", "marin", "cedar"]);
+
 const moodDirections: Record<Mood, string> = {
   calm: "平靜、親近，保留日常說話的自然呼吸與停頓。",
   sorrow: "低沉克制，讓悲傷藏在句尾，不哭腔、不灑狗血，保留人物尊嚴。",
@@ -61,17 +63,16 @@ function direction(mood: Mood, style: string, narrationRate: number) {
   return `使用自然的繁體中文小說旁白，口音以台灣華語為目標。${styleDirection}${moodDirections[mood]}${pace}。依標點保留合理停頓，對話與旁白要有細微差異。避免客服、新聞播報、過度字正腔圓或夸張配音。`;
 }
 
-async function openAiSpeech(text: string, instructions: string, narrationRate: number) {
-  const key = Deno.env.get("OPENAI_API_KEY");
+async function openAiSpeech(text: string, instructions: string, narrationRate: number, voice: string, suppliedKey?: string) {
+  const key = suppliedKey || Deno.env.get("OPENAI_API_KEY");
   if (!key) throw new Error("OpenAI 自然語音尚未設定");
   const model = Deno.env.get("OPENAI_TTS_MODEL") ?? "gpt-4o-mini-tts";
-  const voice = Deno.env.get("OPENAI_TTS_VOICE") ?? "cedar";
   const response = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
     headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model, voice, input: text, instructions, response_format: "mp3",
-      speed: Math.min(1.2, Math.max(0.75, narrationRate)),
+      speed: Math.min(1.5, Math.max(0.5, narrationRate)),
     }),
   });
   if (!response.ok) {
@@ -146,9 +147,18 @@ Deno.serve(async (request) => {
     if (!["openai", "elevenlabs", "minimax"].includes(provider)) throw new Error("不支援的語音引擎");
     if (!Object.hasOwn(moodDirections, mood)) throw new Error("不支援的場景情緒");
 
+    const suppliedKey = provider === "openai" && typeof input.openAiApiKey === "string" ? input.openAiApiKey.trim() : "";
+    if (suppliedKey && (suppliedKey.length < 20 || suppliedKey.length > 512 || /\s/.test(suppliedKey))) {
+      throw new Error("自備 OpenAI API Key 格式不正確");
+    }
+    const configuredVoice = typeof input.openAiVoice === "string"
+      ? input.openAiVoice
+      : Deno.env.get("OPENAI_TTS_VOICE") ?? "cedar";
+    const openAiVoice = openAiVoices.has(configuredVoice) ? configuredVoice : "cedar";
+
     const instructions = direction(mood, style, narrationRate);
     const providerConfig = provider === "openai"
-      ? `${Deno.env.get("OPENAI_TTS_MODEL") ?? "gpt-4o-mini-tts"}:${Deno.env.get("OPENAI_TTS_VOICE") ?? "cedar"}:${narrationRate.toFixed(2)}`
+      ? `${Deno.env.get("OPENAI_TTS_MODEL") ?? "gpt-4o-mini-tts"}:${openAiVoice}:${narrationRate.toFixed(2)}`
       : provider === "elevenlabs"
         ? `${Deno.env.get("ELEVENLABS_MODEL") ?? "eleven_v3"}:${Deno.env.get("ELEVENLABS_VOICE_ID") ?? "unset"}`
         : `${Deno.env.get("MINIMAX_TTS_MODEL") ?? "speech-2.8-hd"}:${Deno.env.get("MINIMAX_VOICE_ID") ?? "Chinese (Mandarin)_Reliable_Executive"}`;
@@ -162,7 +172,7 @@ Deno.serve(async (request) => {
     }
 
     const generated = provider === "openai"
-      ? await openAiSpeech(text, instructions, narrationRate)
+      ? await openAiSpeech(text, instructions, narrationRate, openAiVoice, suppliedKey || undefined)
       : provider === "elevenlabs"
         ? await elevenLabsSpeech(text, mood, input.previousText, input.nextText)
         : await miniMaxSpeech(text, narrationRate);

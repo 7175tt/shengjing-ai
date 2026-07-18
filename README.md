@@ -7,7 +7,8 @@
 - 作品庫：建立、匯入 `.txt` / `.md`、自動保存與切換作品。
 - 場景導演：本機零設定分析；登入後可由 Supabase Edge Function 安全呼叫 OpenAI，分析分幕、情緒、張力、轉場與選曲線索。
 - 導演風格：控制分析與演繹的整體傾向，會實際影響情緒強度、張力、朗讀速度、配樂音量與轉場秒數。
-- 自然朗讀：優先使用 OpenAI GPT-4o mini TTS，依場景調整語氣、節奏與停頓；失敗時可回退瀏覽器繁中語音。
+- 自然朗讀：優先使用 OpenAI GPT-4o mini TTS，提供 13 種內建音色、整體語速調整，並依場景微調語氣、節奏與停頓；失敗時可回退瀏覽器繁中語音。
+- 自備金鑰：使用者可在設定中暫時輸入自己的 OpenAI API Key；只保留於目前分頁記憶體，經 Edge Function 完成當次請求後即丟棄，不寫入瀏覽器儲存空間或資料庫。
 - 朗讀混音：場景同步、暫停／續播／跳幕、可點選與拖曳的故事時間軸、主音量與下一幕預先生成。
 - 平滑轉場：漸入、交叉淡化、主題延續漸強、情節切點；每幕可人工微調。
 - 安全曲庫：Supabase Storage 擴充至 41 首 CC0 配樂，每首保留作者、來源、授權、情緒與情境標籤；另有 5 首內建離線保底曲目。
@@ -35,7 +36,7 @@ npm run preview
 1. GitHub Pages：公開前端與 5 首離線保底曲目。
 2. Supabase Auth + Postgres：Email magic link 與私人作品庫（RLS 隔離）。
 3. Supabase Storage + Postgres 曲目表：存放 41 首 CC0 曲目與曲目級標籤、授權資訊。
-4. Supabase Edge Function：代管 OpenAI 金鑰，呼叫 Responses API 與 Audio Speech API，並將私人旁白快取存入 Storage。
+4. Supabase Edge Function：代管平台 OpenAI 金鑰，或接收使用者單次提供的自備金鑰，呼叫 Responses API 與 Audio Speech API，並將私人旁白快取存入 Storage。
 
 ## 啟用 Supabase（選配）
 
@@ -59,7 +60,7 @@ npm run preview
 
 5. 在 Supabase Auth URL Configuration 加入正式 GitHub Pages URL 作為 Redirect URL。
 
-> `OPENAI_API_KEY` 只放在 Supabase secret，絕對不要命名為 `VITE_OPENAI_API_KEY` 或提交到 Git。
+> 平台的 `OPENAI_API_KEY` 只放在 Supabase secret，絕對不要命名為 `VITE_OPENAI_API_KEY` 或提交到 Git。前端自備金鑰也不得寫入 `localStorage`、作品資料或分析紀錄。
 
 > OpenAI 合成聲音在介面中會明確標示為 AI 生成。正式朗讀須先以 Email magic link 登入，避免公開網頁被濫用產生 API 費用。
 

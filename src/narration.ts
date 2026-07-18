@@ -1,4 +1,4 @@
-import type { NarrativeMood, NarrationProvider, NarrationSettings } from "./types";
+import type { NarrativeMood, NarrationProvider, NarrationSettings, OpenAIVoice } from "./types";
 
 const SETTINGS_KEY = "shengjing-ai-narration-v3";
 
@@ -14,6 +14,27 @@ export const NARRATION_PROVIDERS: Array<{
   { id: "system", name: "裝置語音", model: "瀏覽器內建", note: "免設定的保底聲音", accent: "依裝置而定", cloud: false },
   { id: "elevenlabs", name: "ElevenLabs", model: "Eleven v3", note: "戲劇張力與多語情緒表現", accent: "多語中文", cloud: true },
   { id: "minimax", name: "MiniMax", model: "Speech 2.8 HD", note: "中文韻律與讀音控制完整", accent: "標準華語", cloud: true },
+];
+
+export const OPENAI_VOICE_OPTIONS: Array<{
+  id: OpenAIVoice;
+  name: string;
+  tone: string;
+  recommended?: boolean;
+}> = [
+  { id: "cedar", name: "Cedar", tone: "偏低沉 · 沉穩厚實", recommended: true },
+  { id: "marin", name: "Marin", tone: "偏明亮 · 自然柔和", recommended: true },
+  { id: "onyx", name: "Onyx", tone: "偏低沉 · 深厚有力" },
+  { id: "ash", name: "Ash", tone: "偏低沉 · 清楚直接" },
+  { id: "echo", name: "Echo", tone: "偏低沉 · 溫暖敘事" },
+  { id: "ballad", name: "Ballad", tone: "偏低沉 · 柔和抒情" },
+  { id: "coral", name: "Coral", tone: "偏明亮 · 親切鮮明" },
+  { id: "nova", name: "Nova", tone: "偏明亮 · 活潑清楚" },
+  { id: "shimmer", name: "Shimmer", tone: "偏明亮 · 輕柔細膩" },
+  { id: "alloy", name: "Alloy", tone: "中性 · 平衡自然" },
+  { id: "sage", name: "Sage", tone: "中性 · 沉著清晰" },
+  { id: "fable", name: "Fable", tone: "中性 · 故事感" },
+  { id: "verse", name: "Verse", tone: "中性 · 節奏清楚" },
 ];
 
 export const VOICE_LAB_SAMPLES: Array<{ id: string; title: string; function: string; mood: NarrativeMood; text: string }> = [
@@ -38,9 +59,14 @@ export const VOICE_LAB_SAMPLES: Array<{ id: string; title: string; function: str
 export function loadNarrationSettings(): NarrationSettings {
   try {
     const value = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null") as NarrationSettings | null;
-    if (value && NARRATION_PROVIDERS.some((provider) => provider.id === value.provider)) return value;
+    if (value && NARRATION_PROVIDERS.some((provider) => provider.id === value.provider)) {
+      const openAiVoice = OPENAI_VOICE_OPTIONS.some((voice) => voice.id === value.openAiVoice) ? value.openAiVoice : "cedar";
+      const parsedSpeed = Number(value.speed ?? 1);
+      const speed = Number.isFinite(parsedSpeed) ? Math.min(1.3, Math.max(0.7, parsedSpeed)) : 1;
+      return { provider: value.provider, autoFallback: value.autoFallback !== false, openAiVoice, speed };
+    }
   } catch { /* use safe defaults */ }
-  return { provider: "openai", autoFallback: true };
+  return { provider: "openai", autoFallback: true, openAiVoice: "cedar", speed: 1 };
 }
 
 export function saveNarrationSettings(settings: NarrationSettings) {
