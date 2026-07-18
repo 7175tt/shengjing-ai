@@ -487,7 +487,7 @@ function App() {
       <aside className={`sidebar ${mobileNav ? "open" : ""}`}>
         <div className="sidebar-mobile-head"><b>作品庫</b><button className="icon-button" onClick={() => setMobileNav(false)}><X size={18} /></button></div>
         <div className="workspace-label"><Library size={15} /> 我的作品 <span>{projects.length}</span></div>
-        <div className="project-list">
+        <div className="project-list" role="navigation" aria-label="我的作品">
           {projects.map((project) => (
             <button key={project.id} className={`project-row ${project.id === current.id ? "active" : ""}`} onClick={() => selectProject(project.id)}>
               <span className="project-symbol"><BookOpen size={16} /></span>
@@ -553,7 +553,7 @@ function App() {
               {editing ? (
                 <textarea className="story-editor" aria-label="小說全文" value={current.body} placeholder="在這裡貼上小說章節，或從左側匯入 .txt / .md…" onChange={(event) => { updateCurrent({ body: event.target.value }); setDirty(true); }} />
               ) : (
-                <article className="manuscript" aria-label="小說場景">
+                <article className="manuscript" aria-label="小說場景" tabIndex={0}>
                   {current.cues.length ? current.cues.map((scene, index) => (
                     <button key={scene.id} className={`scene-text ${index === selectedScene ? "active" : ""} ${playing && index === selectedScene ? "speaking" : ""}`} onClick={() => void previewScene(index)}>
                       <span className="scene-gutter"><i style={{ background: moodColor[scene.mood] }} /><small>{String(index + 1).padStart(2, "0")}</small></span>
@@ -566,7 +566,7 @@ function App() {
               )}
             </>
           ) : view === "voices" ? (
-            <div className="voice-lab">
+            <div className="voice-lab" role="region" aria-label="聲音實驗室" tabIndex={0}>
               <div className="voice-lab-intro">
                 <span>中文小說聲音實驗室</span>
                 <h2>同一段文字，直接用耳朵決定。</h2>
@@ -601,7 +601,7 @@ function App() {
               </div>
             </div>
           ) : (
-            <div className="music-library">
+            <div className="music-library" role="region" aria-label="音樂庫曲目" tabIndex={0}>
               <div className="library-intro"><span>物件儲存曲庫 · {musicTracks.length} 首</span><h2>配樂可以成長，授權不能遺失。</h2><p>遠端目錄會從 Supabase／R2 載入；內建曲目只作離線保底。每首曲目都保留作者、來源、授權與情緒標籤。</p></div>
               {musicTracks.map((track) => (
                 <div className="track-row" key={track.id}>
@@ -619,7 +619,7 @@ function App() {
         <aside className="inspector">
           <div className="inspector-head"><span>場景導演</span><small>{cue ? `${selectedScene + 1} / ${current.cues.length}` : "尚未分析"}</small></div>
           {cue ? (
-            <div className="inspector-content">
+            <div className="inspector-content" role="region" aria-label="場景調整" tabIndex={0}>
               <div className="scene-identity"><i style={{ background: moodColor[cue.mood] }} /><span><small>{cue.narrativeFunction}</small><b>{cue.title}</b></span></div>
               <p className="reason">{cue.reason}</p>
               <div className="meter-block">
