@@ -55,6 +55,32 @@ const styleProfiles: Record<StoryStyle, {
   "克制敘事": { arousal: -0.11, tension: -0.09, musicLevel: -0.04, narrationRate: -0.025, transitionSeconds: 1.1, restrainedTransitions: true },
 };
 
+const styleTrackTags: Record<StoryStyle, string[]> = {
+  "自動判讀": [],
+  "忠實原文": ["平靜", "環境", "留白", "日常", "對話", "沉思", "寧靜"],
+  "電影感": ["高張力", "戰鬥", "冒險", "使命", "遠征", "反轉", "倒數", "追逐", "主題", "危機", "勝利"],
+  "溫柔細膩": ["回憶", "懷舊", "浪漫", "甜蜜", "輕盈", "寧靜", "釋懷", "日常", "空靈"],
+  "克制敘事": ["留白", "冷冽", "空洞", "寂靜", "沉思", "神秘", "淡淡哀傷", "環境", "思考"],
+};
+
+export const MIDI_DERIVED_TRACK_IDS = new Set([
+  "broken-arm",
+  "casual-afternoon",
+  "icy-garden",
+  "journey-forgotten",
+  "standardized-anxiety",
+  "without-time",
+]);
+
+export function isMidiDerivedTrack(track: MusicTrack) {
+  const provenance = `${track.id} ${track.title} ${track.author} ${track.sourceUrl} ${track.objectKey ?? ""}`.toLowerCase();
+  return MIDI_DERIVED_TRACK_IDS.has(track.id)
+    || provenance.includes("original-midi-album")
+    || /(^|[^a-z])midi([^a-z]|$)/.test(provenance);
+}
+
+export const supportedMusicTracks = (tracks: MusicTrack[]) => tracks.filter((track) => !isMidiDerivedTrack(track));
+
 const clamp = (value: number, minimum = -1, maximum = 1) => Math.min(maximum, Math.max(minimum, value));
 const sentences = (text: string) => (text.match(/[^。！？!?]+[。！？!?」]?/g) ?? [text]).map((part) => part.trim()).filter(Boolean);
 
@@ -145,30 +171,53 @@ export function analyzeStory(source: string, style: StoryStyle): SceneCue[] {
   });
 }
 
-export function assignMusicTracks(cues: SceneCue[], tracks: MusicTrack[]) {
+function stableVariation(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967295;
+}
+
+export function assignMusicTracks(cues: SceneCue[], tracks: MusicTrack[], style: StoryStyle = "自動判讀") {
+  const eligibleTracks = supportedMusicTracks(tracks);
+  if (!eligibleTracks.length) return cues;
+  const storySeed = cues.map((cue) => cue.text).join("\u241e");
+  const usage = new Map<string, number>();
+  const authorUsage = new Map<string, number>();
   let previousId = "";
   let previousMood: NarrativeMood | "" = "";
   return cues.map((cue) => {
-    const candidates = tracks.filter((track) => track.moods.includes(cue.mood));
-    const pool = candidates.length ? candidates : tracks;
+    const candidates = eligibleTracks.filter((track) => track.moods.includes(cue.mood));
+    const pool = candidates.length ? candidates : eligibleTracks;
     const scored = pool.map((track) => ({
       track,
       score: track.tags.reduce((score, tag) => {
         const keywordHit = cue.matchedKeywords.some((keyword) => keyword.includes(tag) || tag.includes(keyword));
-        return score + (cue.text.includes(tag) ? 3 : 0) + (keywordHit ? 4 : 0);
-      }, track.moods.includes(cue.mood) ? 2 : 0)
-        + (track.id === previousId && cue.mood === previousMood ? 1.5 : 0),
+        const styleHit = styleTrackTags[style].includes(tag);
+        return score + (cue.text.includes(tag) ? 5 : 0) + (keywordHit ? 4 : 0) + (styleHit ? 2.1 : 0);
+      }, track.moods.includes(cue.mood) ? 8 : 0)
+        - (usage.get(track.id) ?? 0) * 1.8
+        - (authorUsage.get(track.author) ?? 0) * 0.35
+        - (track.id === previousId ? (cue.mood === previousMood && cue.transitionType === "swell" ? 0.6 : 3.2) : 0)
+        + stableVariation(`${storySeed}|${style}|${cue.index}|${track.id}`) * 1.6,
     })).sort((a, b) => b.score - a.score || a.track.title.localeCompare(b.track.title));
-    const bestScore = scored[0]?.score ?? 0;
-    const bestMatches = scored.filter(({ score }) => score === bestScore);
-    const selected = bestMatches[cue.index % Math.max(1, bestMatches.length)]?.track;
+    const selected = scored[0]?.track;
     previousId = selected?.id ?? cue.musicTrackId;
     previousMood = cue.mood;
+    if (selected) {
+      usage.set(selected.id, (usage.get(selected.id) ?? 0) + 1);
+      authorUsage.set(selected.author, (authorUsage.get(selected.author) ?? 0) + 1);
+    }
     return selected ? { ...cue, musicTrackId: selected.id } : cue;
   });
 }
 
-export const getTrack = (trackId: string, tracks: MusicTrack[] = MUSIC_LIBRARY) => tracks.find((track) => track.id === trackId) ?? tracks[0] ?? MUSIC_LIBRARY[0];
+export const getTrack = (trackId: string, tracks: MusicTrack[] = MUSIC_LIBRARY) => {
+  const eligibleTracks = supportedMusicTracks(tracks);
+  return eligibleTracks.find((track) => track.id === trackId) ?? eligibleTracks[0] ?? MUSIC_LIBRARY[0];
+};
 
 export const moodColor: Record<NarrativeMood, string> = {
   calm: "#85a8a0", sorrow: "#9294a5", dark: "#716f7e", crisis: "#c67554", rise: "#d6a54b", triumph: "#edbf5e",

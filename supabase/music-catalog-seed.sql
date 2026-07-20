@@ -2,6 +2,11 @@
 grant usage on schema public to anon, authenticated;
 grant select on table public.music_tracks to anon, authenticated;
 
+-- MIDI 衍生曲目保留稽核紀錄，但不得再進入公開曲庫或自動選曲。
+update public.music_tracks
+set published = false, updated_at = now()
+where id in ('broken-arm', 'casual-afternoon', 'icy-garden', 'journey-forgotten', 'standardized-anxiety', 'without-time');
+
 insert into public.music_tracks (
   id, title, author, object_url, object_key, storage_provider,
   moods, tags, license, source_url, published, sort_order
@@ -113,104 +118,74 @@ values
   'CC0', 'https://opengameart.org/content/a-music-collection', true, 21
 ),
 (
-  'broken-arm', 'Broken Arm', 'Roppy Chop Studios', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/broken-arm.mp3',
-  'cc0/broken-arm.mp3', 'supabase', array['crisis', 'sorrow']::text[], array['意外', '疼痛', '焦慮', '失落']::text[],
-  'CC0', 'https://opengameart.org/content/original-midi-album', true, 22
-),
-(
-  'casual-afternoon', 'Casual Afternoon', 'Roppy Chop Studios', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/casual-afternoon.mp3',
-  'cc0/casual-afternoon.mp3', 'supabase', array['calm']::text[], array['午後', '咖啡', '日常', '溫暖']::text[],
-  'CC0', 'https://opengameart.org/content/original-midi-album', true, 23
-),
-(
-  'icy-garden', 'Icy Garden', 'Roppy Chop Studios', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/icy-garden.mp3',
-  'cc0/icy-garden.mp3', 'supabase', array['calm', 'dark']::text[], array['冬日', '孤寂', '花園', '神秘']::text[],
-  'CC0', 'https://opengameart.org/content/original-midi-album', true, 24
-),
-(
-  'journey-forgotten', 'Journey Forgotten', 'Roppy Chop Studios', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/journey-forgotten.mp3',
-  'cc0/journey-forgotten.mp3', 'supabase', array['sorrow', 'rise']::text[], array['旅行', '遺忘', '回憶', '遠方']::text[],
-  'CC0', 'https://opengameart.org/content/original-midi-album', true, 25
-),
-(
-  'standardized-anxiety', 'Standardized Anxiety', 'Roppy Chop Studios', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/standardized-anxiety.mp3',
-  'cc0/standardized-anxiety.mp3', 'supabase', array['crisis', 'dark']::text[], array['城市', '焦慮', '匆忙', '壓力']::text[],
-  'CC0', 'https://opengameart.org/content/original-midi-album', true, 26
-),
-(
-  'without-time', 'Without Time', 'Roppy Chop Studios', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/without-time.mp3',
-  'cc0/without-time.mp3', 'supabase', array['sorrow', 'dark']::text[], array['時間', '離別', '懸念', '追憶']::text[],
-  'CC0', 'https://opengameart.org/content/original-midi-album', true, 27
-),
-(
   'brand-new-wisdom', 'A Brand New Wisdom', 'hernandack', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/a-brand-new-wisdom.ogg',
   'cc0/a-brand-new-wisdom.ogg', 'supabase', array['calm', 'rise']::text[], array['領悟', '沉思', '智慧', '新生']::text[],
-  'CC0', 'https://opengameart.org/content/short-loops-background-music-pack', true, 28
+  'CC0', 'https://opengameart.org/content/short-loops-background-music-pack', true, 22
 ),
 (
   'just-saying-tho', 'Just Saying Tho', 'hernandack', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/just-saying-tho.ogg',
   'cc0/just-saying-tho.ogg', 'supabase', array['calm', 'triumph']::text[], array['對話', '機智', '輕鬆', '日常']::text[],
-  'CC0', 'https://opengameart.org/content/short-loops-background-music-pack', true, 29
+  'CC0', 'https://opengameart.org/content/short-loops-background-music-pack', true, 23
 ),
 (
   'swinging-sweet', 'Swinging Sweet', 'hernandack', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/swinging-sweet.ogg',
   'cc0/swinging-sweet.ogg', 'supabase', array['calm', 'triumph']::text[], array['浪漫', '甜蜜', '約會', '輕快']::text[],
-  'CC0', 'https://opengameart.org/content/short-loops-background-music-pack', true, 30
+  'CC0', 'https://opengameart.org/content/short-loops-background-music-pack', true, 24
 ),
 (
   'winter-dust', 'Winter Dust', 'hernandack', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/winter-dust.ogg',
   'cc0/winter-dust.ogg', 'supabase', array['sorrow', 'calm']::text[], array['冬日', '回憶', '寧靜', '淡淡哀傷']::text[],
-  'CC0', 'https://opengameart.org/content/short-loops-background-music-pack', true, 31
+  'CC0', 'https://opengameart.org/content/short-loops-background-music-pack', true, 25
 ),
 (
   'sci-fi-airy', 'Airy', 'SRG774', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/sci-fi-airy.ogg',
   'cc0/sci-fi-airy.ogg', 'supabase', array['calm', 'dark']::text[], array['失重', '空靈', '宇宙', '詭異']::text[],
-  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 32
+  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 26
 ),
 (
   'sci-fi-pulse', 'Pulse', 'SRG774', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/sci-fi-pulse.ogg',
   'cc0/sci-fi-pulse.ogg', 'supabase', array['dark', 'crisis']::text[], array['心跳', '懸疑', '外星', '脈動']::text[],
-  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 33
+  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 27
 ),
 (
   'sci-fi-sector', 'Sector', 'SRG774', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/sci-fi-sector.ogg',
   'cc0/sci-fi-sector.ogg', 'supabase', array['dark', 'calm']::text[], array['未知', '探索', '外星', '寂靜']::text[],
-  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 34
+  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 28
 ),
 (
   'sci-fi-title', 'Dark Sci-Fi Title', 'SRG774', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/sci-fi-title.ogg',
   'cc0/sci-fi-title.ogg', 'supabase', array['dark', 'rise']::text[], array['主題', '未知', '科幻', '開場']::text[],
-  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 35
+  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 29
 ),
 (
   'sci-fi-transmission', 'Transmission', 'SRG774', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/sci-fi-transmission.ogg',
   'cc0/sci-fi-transmission.ogg', 'supabase', array['dark', 'sorrow', 'crisis']::text[], array['訊號', '終局', '不祥', '釋放']::text[],
-  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 36
+  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 30
 ),
 (
   'sci-fi-urgent', 'Urgent', 'SRG774', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/sci-fi-urgent.ogg',
   'cc0/sci-fi-urgent.ogg', 'supabase', array['crisis']::text[], array['緊急', '倒數', '追逐', '高風險']::text[],
-  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 37
+  'CC0', 'https://opengameart.org/content/dark-sci-fi-audio-pack', true, 31
 ),
 (
   'dumus', 'Dumus', 'pauliuw', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/dumus.mp3',
   'cc0/dumus.mp3', 'supabase', array['calm', 'dark']::text[], array['謎題', '推理', '神秘', '思考']::text[],
-  'CC0', 'https://opengameart.org/content/music-loops', true, 38
+  'CC0', 'https://opengameart.org/content/music-loops', true, 32
 ),
 (
   'fast-background', 'Fast Background', 'pauliuw', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/fast-background.mp3',
   'cc0/fast-background.mp3', 'supabase', array['crisis', 'triumph']::text[], array['行動', '追逐', '輕快', '推進']::text[],
-  'CC0', 'https://opengameart.org/content/music-loops', true, 39
+  'CC0', 'https://opengameart.org/content/music-loops', true, 33
 ),
 (
   'four-loop', 'Four Loop', 'pauliuw', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/four-loop.mp3',
   'cc0/four-loop.mp3', 'supabase', array['calm']::text[], array['謎題', '輕盈', '專注', '好奇']::text[],
-  'CC0', 'https://opengameart.org/content/music-loops', true, 40
+  'CC0', 'https://opengameart.org/content/music-loops', true, 34
 ),
 (
   'tempo', 'Tempo', 'pauliuw', 'https://bydlhkzwvhykjttilwtr.supabase.co/storage/v1/object/public/music-library/cc0/tempo.mp3',
   'cc0/tempo.mp3', 'supabase', array['rise', 'crisis']::text[], array['節奏', '前進', '計畫', '加速']::text[],
-  'CC0', 'https://opengameart.org/content/music-loops', true, 41
+  'CC0', 'https://opengameart.org/content/music-loops', true, 35
 )
 on conflict (id) do update set
   title = excluded.title,

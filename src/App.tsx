@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { SoundtrackMixer } from "./audioEngine";
 import { analyzeInCloud, generateNarration, getCloudUser, isCloudConfigured, loadRemoteMusicTracks, pullCloudProjects, pushCloudProject, signInWithEmail, signOut, type NarrationResult } from "./cloud";
-import { assignMusicTracks, getTrack, moodColor, MUSIC_LIBRARY } from "./storyEngine";
+import { assignMusicTracks, getTrack, MIDI_DERIVED_TRACK_IDS, moodColor, MUSIC_LIBRARY, supportedMusicTracks } from "./storyEngine";
 import { loadNarrationSettings, NARRATION_PROVIDERS, OPENAI_VOICE_OPTIONS, providerLabel, saveNarrationSettings, VOICE_LAB_SAMPLES } from "./narration";
 import { exportCueSheet, loadCurrentProjectId, loadProjects, newProject, saveCurrentProjectId, saveProjects } from "./storage";
 import { STORY_STYLES, STORY_STYLE_DESCRIPTIONS, type AnalysisMode, type MusicTrack, type NarrationProvider, type NarrationSettings, type OpenAIVoice, type SceneCue, type StoryProject, type StoryStyle } from "./types";
@@ -101,7 +101,17 @@ function App() {
       if (catalog.length) {
         const merged = new Map(MUSIC_LIBRARY.map((track) => [track.id, track]));
         catalog.forEach((track) => merged.set(track.id, track));
-        setMusicTracks([...merged.values()]);
+        const supportedTracks = supportedMusicTracks([...merged.values()]);
+        setMusicTracks(supportedTracks);
+        setProjects((items) => items.map((project) => {
+          if (!project.cues.some((scene) => MIDI_DERIVED_TRACK_IDS.has(scene.musicTrackId))) return project;
+          const reassigned = assignMusicTracks(project.cues, supportedTracks, project.style);
+          return {
+            ...project,
+            cues: project.cues.map((scene, index) => MIDI_DERIVED_TRACK_IDS.has(scene.musicTrackId) ? reassigned[index] : scene),
+            updatedAt: new Date().toISOString(),
+          };
+        }));
       }
     })();
     return () => {
@@ -171,7 +181,7 @@ function App() {
         await new Promise((resolve) => window.setTimeout(resolve, 520));
         cues = analyzeStory(current.body, current.style);
       }
-      cues = assignMusicTracks(cues, tracksRef.current);
+      cues = assignMusicTracks(cues, tracksRef.current, current.style);
       updateCurrent({ cues });
       setSelectedScene(0);
       setEditing(false);
@@ -179,7 +189,7 @@ function App() {
       notify(`${cues.length} 個場景已完成配樂設計`);
     } catch (error) {
       if (analysisMode === "cloud") {
-        const cues = analyzeStory(current.body, current.style);
+        const cues = assignMusicTracks(analyzeStory(current.body, current.style), tracksRef.current, current.style);
         updateCurrent({ cues });
         setAnalysisMode("local");
         setDirty(false);
@@ -678,7 +688,7 @@ function App() {
                 <div className="meter"><i style={{ width: `${cue.arousal * 100}%` }} /></div>
               </div>
               <label className="field-label">配樂</label>
-              <select className="field" value={cue.musicTrackId} onChange={(event) => updateCue({ musicTrackId: event.target.value })}>
+              <select className="field" value={getTrack(cue.musicTrackId, musicTracks).id} onChange={(event) => updateCue({ musicTrackId: event.target.value })}>
                 {musicTracks.map((track) => <option value={track.id} key={track.id}>{track.title}</option>)}
               </select>
               <div className="track-detail"><FileAudio size={17} /><span><b>{getTrack(cue.musicTrackId, musicTracks).author}</b><small>{getTrack(cue.musicTrackId, musicTracks).tags.join(" · ")} · {getTrack(cue.musicTrackId, musicTracks).license}</small></span></div>

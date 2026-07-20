@@ -6,6 +6,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const catalogPath = path.join(root, "public", "music-catalog.json");
 const outputPath = path.join(root, "supabase", "music-catalog-seed.sql");
 const catalog = JSON.parse(await readFile(catalogPath, "utf8"));
+const retiredTrackIds = [
+  "broken-arm",
+  "casual-afternoon",
+  "icy-garden",
+  "journey-forgotten",
+  "standardized-anxiety",
+  "without-time",
+];
 const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
 const textArray = (values) => `array[${values.map(quote).join(", ")}]::text[]`;
 
@@ -18,6 +26,11 @@ const rows = catalog.map((track, index) => `(
 const sql = `-- Generated from public/music-catalog.json. Do not hand-edit track metadata here.
 grant usage on schema public to anon, authenticated;
 grant select on table public.music_tracks to anon, authenticated;
+
+-- MIDI 衍生曲目保留稽核紀錄，但不得再進入公開曲庫或自動選曲。
+update public.music_tracks
+set published = false, updated_at = now()
+where id in (${retiredTrackIds.map(quote).join(", ")});
 
 insert into public.music_tracks (
   id, title, author, object_url, object_key, storage_provider,
