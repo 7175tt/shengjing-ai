@@ -69,21 +69,74 @@ export async function generateNarration(input: {
 
 export async function loadRemoteMusicTracks(): Promise<MusicTrack[]> {
   if (!supabase) return [];
-  const { data, error } = await supabase.from("music_tracks").select("*").eq("published", true).order("sort_order");
+  const { data, error } = await supabase.from("music_tracks").select("*").order("sort_order");
   if (error) return [];
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    title: row.title,
-    author: row.author,
-    file: row.object_url,
-    moods: row.moods,
-    tags: row.tags,
-    license: row.license,
-    sourceUrl: row.source_url,
-    storageProvider: row.storage_provider,
-    objectKey: row.object_key,
-    durationSeconds: row.duration_seconds ?? undefined,
-  })) as MusicTrack[];
+  const tracks = await Promise.all((data ?? []).map(async (row) => {
+    let file = row.object_url;
+    if (row.owner_id && row.object_key) {
+      const { data: signed } = await supabase.storage.from("user-music").createSignedUrl(row.object_key, 21600);
+      file = signed?.signedUrl ?? "";
+    }
+    return {
+      id: row.id,
+      title: row.title,
+      author: row.author,
+      file,
+      moods: row.moods,
+      tags: row.tags,
+      license: row.license,
+      sourceUrl: row.source_url,
+      storageProvider: row.storage_provider,
+      objectKey: row.object_key,
+      durationSeconds: row.duration_seconds ?? undefined,
+      ownerId: row.owner_id ?? undefined,
+      analysisModel: row.analysis_model ?? undefined,
+      analysisSummary: row.analysis_summary ?? undefined,
+      userUploaded: Boolean(row.owner_id),
+    } satisfies MusicTrack;
+  }));
+  return tracks.filter((track) => Boolean(track.file));
+}
+
+export async function uploadAndAnalyzeMusic(input: {
+  file: File;
+  title: string;
+  durationSeconds?: number;
+  openAiApiKey?: string;
+}): Promise<MusicTrack> {
+  if (!supabase) throw new Error("尚未設定音樂上傳服務");
+  const user = await getCloudUser();
+  if (!user) throw new Error("請先登入再上傳音樂");
+
+  const extension = input.file.name.split(".").pop()?.toLowerCase();
+  if (!extension || !["mp3", "wav"].includes(extension)) throw new Error("AI 分析目前支援 MP3 與 WAV");
+  const storagePath = `${user.id}/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await supabase.storage.from("user-music").upload(storagePath, input.file, {
+    contentType: extension === "mp3" ? "audio/mpeg" : "audio/wav",
+    cacheControl: "3600",
+    upsert: false,
+  });
+  if (uploadError) throw uploadError;
+
+  try {
+    const suppliedKey = input.openAiApiKey?.trim();
+    const { data, error } = await supabase.functions.invoke("analyze-music", {
+      body: {
+        storagePath,
+        title: input.title,
+        fileName: input.file.name,
+        mimeType: input.file.type,
+        durationSeconds: input.durationSeconds,
+        ...(suppliedKey ? { openAiApiKey: suppliedKey } : {}),
+      },
+    });
+    if (error) throw new Error(data?.error ?? error.message);
+    if (!data?.track?.id || !data?.track?.file) throw new Error(data?.error ?? "AI 沒有回傳可用的樂曲資料");
+    return data.track as MusicTrack;
+  } catch (error) {
+    await supabase.storage.from("user-music").remove([storagePath]);
+    throw error;
+  }
 }
 
 export async function pullCloudProjects(): Promise<StoryProject[]> {

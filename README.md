@@ -12,6 +12,8 @@
 - 朗讀混音：場景同步、暫停／續播／跳幕、可點選與拖曳的故事時間軸、主音量與下一幕預先生成。
 - 平滑轉場：漸入、交叉淡化、主題延續漸強、情節切點；每幕可人工微調。
 - 安全曲庫：Supabase Storage 收錄 35 首非 MIDI 衍生的 CC0 配樂，每首保留作者、來源、授權、情緒與情境標籤；另有 5 首內建離線保底曲目。
+- 曲庫操作：每首曲目的試聽按鈕會切換播放／暫停狀態；情緒與情境標籤可單選或複選，複選採 AND 邏輯，只保留同時包含所有所選標籤的樂曲。
+- 自有音樂：登入使用者可上傳 20 MB 以內的 MP3／WAV 到私人 `user-music` Storage；後端使用 OpenAI `gpt-audio-mini` 聆聽音訊並建立標準化繁中情緒標籤，曲目不會公開給其他使用者。
 - 可攜資料：匯出帶場景、情緒與混音參數的 JSON 配樂表。
 - 漸進式雲端：沒有後端也能完整使用；登入後加入跨裝置保存與 AI 導演。
 
@@ -35,8 +37,8 @@ npm run preview
 
 1. GitHub Pages：公開前端與 5 首離線保底曲目。
 2. Supabase Auth + Postgres：Email magic link 與私人作品庫（RLS 隔離）。
-3. Supabase Storage + Postgres 曲目表：存放 35 首非 MIDI 衍生的 CC0 曲目與曲目級標籤、授權資訊。
-4. Supabase Edge Function：代管平台 OpenAI 金鑰，或接收使用者單次提供的自備金鑰，呼叫 Responses API 與 Audio Speech API，並將私人旁白快取存入 Storage。
+3. Supabase Storage + Postgres 曲目表：存放 35 首非 MIDI 衍生的 CC0 曲目，以及登入使用者的私人上傳曲目、授權資訊與 AI 標籤。
+4. Supabase Edge Function：代管平台 OpenAI 金鑰，或接收使用者單次提供的自備金鑰；故事分析使用 Responses API、旁白使用 Audio Speech API、音樂標註使用支援音訊輸入的 `gpt-audio-mini` Chat Completions API。
 
 ## 啟用 Supabase（選配）
 
@@ -49,6 +51,7 @@ npm run preview
    supabase secrets set OPENAI_API_KEY=<YOUR_KEY> OPENAI_MODEL=gpt-5-mini OPENAI_TTS_MODEL=gpt-4o-mini-tts OPENAI_TTS_VOICE=cedar
    supabase functions deploy analyze-story
    supabase functions deploy narrate-scene
+   supabase functions deploy analyze-music
    ```
 
    `OPENAI_MODEL` 可換成其他文字分析模型；若未設定，`analyze-story` 目前以 `gpt-5.6-luna` 作為程式預設值。

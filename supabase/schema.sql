@@ -112,3 +112,45 @@ grant select on table public.music_tracks to anon, authenticated;
 insert into storage.buckets (id, name, public, allowed_mime_types)
 values ('music-library', 'music-library', true, array['audio/mpeg', 'audio/ogg', 'audio/wav'])
 on conflict (id) do update set public = excluded.public, allowed_mime_types = excluded.allowed_mime_types;
+
+-- 使用者自有音樂：私人儲存、個人目錄與 GPT Audio 分析結果。
+alter table public.music_tracks add column if not exists owner_id uuid references auth.users(id) on delete cascade;
+alter table public.music_tracks add column if not exists analysis_model text;
+alter table public.music_tracks add column if not exists analysis_summary text;
+alter table public.music_tracks add column if not exists analysis_status text not null default 'catalog';
+alter table public.music_tracks add column if not exists energy numeric;
+alter table public.music_tracks add column if not exists valence numeric;
+
+create index if not exists music_tracks_owner_created_idx
+  on public.music_tracks(owner_id, created_at desc) where owner_id is not null;
+
+drop policy if exists "owners can read personal music" on public.music_tracks;
+create policy "owners can read personal music" on public.music_tracks
+  for select to authenticated using (auth.uid() = owner_id);
+
+drop policy if exists "owners can delete personal music" on public.music_tracks;
+create policy "owners can delete personal music" on public.music_tracks
+  for delete to authenticated using (auth.uid() = owner_id);
+
+grant select, delete on table public.music_tracks to authenticated;
+grant select, insert, update, delete on table public.music_tracks to service_role;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('user-music', 'user-music', false, 20971520, array['audio/mpeg', 'audio/wav', 'audio/x-wav'])
+on conflict (id) do update set public = excluded.public,
+  file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "owners can upload user music" on storage.objects;
+create policy "owners can upload user music" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'user-music' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "owners can read user music" on storage.objects;
+create policy "owners can read user music" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'user-music' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "owners can delete user music" on storage.objects;
+create policy "owners can delete user music" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'user-music' and (storage.foldername(name))[1] = auth.uid()::text);

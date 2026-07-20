@@ -39,6 +39,10 @@ export interface MusicTrack {
   storageProvider?: "local" | "supabase" | "r2";
   objectKey?: string;
   durationSeconds?: number;
+  ownerId?: string;
+  analysisModel?: string;
+  analysisSummary?: string;
+  userUploaded?: boolean;
 }
 
 export interface SceneCue {

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AudioLines, BookOpen, Check, ChevronDown, CircleUserRound, Cloud, CloudOff, Download, Eye, EyeOff, FileAudio,
+  AudioLines, BookOpen, BrainCircuit, Check, ChevronDown, CircleUserRound, Cloud, CloudOff, Download, Eye, EyeOff, FileAudio,
   FilePlus2, Headphones, Library, LoaderCircle, LogIn, LogOut, Menu, Music2,
-  KeyRound, Mic2, Pause, Play, Plus, Save, Server, Settings2, SkipBack, SkipForward, Sparkles, Square,
-  Upload, Volume2, WandSparkles, X,
+  KeyRound, Mic2, Pause, Play, Plus, Save, Server, Settings2, SkipBack, SkipForward, Sparkles, Square, Tag,
+  Upload, UploadCloud, Volume2, WandSparkles, X,
 } from "lucide-react";
 import { SoundtrackMixer } from "./audioEngine";
-import { analyzeInCloud, generateNarration, getCloudUser, isCloudConfigured, loadRemoteMusicTracks, pullCloudProjects, pushCloudProject, signInWithEmail, signOut, type NarrationResult } from "./cloud";
+import { analyzeInCloud, generateNarration, getCloudUser, isCloudConfigured, loadRemoteMusicTracks, pullCloudProjects, pushCloudProject, signInWithEmail, signOut, uploadAndAnalyzeMusic, type NarrationResult } from "./cloud";
 import { assignMusicTracks, getTrack, MIDI_DERIVED_TRACK_IDS, moodColor, MUSIC_LIBRARY, supportedMusicTracks } from "./storyEngine";
 import { loadNarrationSettings, NARRATION_PROVIDERS, OPENAI_VOICE_OPTIONS, providerLabel, saveNarrationSettings, VOICE_LAB_SAMPLES } from "./narration";
 import { exportCueSheet, loadCurrentProjectId, loadProjects, newProject, saveCurrentProjectId, saveProjects } from "./storage";
@@ -22,6 +22,15 @@ const formatClock = (seconds: number) => {
   const safe = Math.max(0, Math.round(seconds));
   return `${Math.floor(safe / 60).toString().padStart(2, "0")}:${(safe % 60).toString().padStart(2, "0")}`;
 };
+const readAudioDuration = (file: File) => new Promise<number | undefined>((resolve) => {
+  const objectUrl = URL.createObjectURL(file);
+  const audio = new Audio();
+  const finish = (value?: number) => { URL.revokeObjectURL(objectUrl); audio.removeAttribute("src"); resolve(value); };
+  audio.preload = "metadata";
+  audio.onloadedmetadata = () => finish(Number.isFinite(audio.duration) ? audio.duration : undefined);
+  audio.onerror = () => finish(undefined);
+  audio.src = objectUrl;
+});
 
 function App() {
   const [projects, setProjects] = useState<StoryProject[]>(() => loadProjects());
@@ -43,6 +52,11 @@ function App() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [cloudBusy, setCloudBusy] = useState(false);
   const [musicTracks, setMusicTracks] = useState<MusicTrack[]>(MUSIC_LIBRARY);
+  const [libraryPreviewTrackId, setLibraryPreviewTrackId] = useState<string | null>(null);
+  const [libraryPreviewPlaying, setLibraryPreviewPlaying] = useState(false);
+  const [selectedMusicTags, setSelectedMusicTags] = useState<string[]>([]);
+  const [musicUploadBusy, setMusicUploadBusy] = useState(false);
+  const [musicUploadStage, setMusicUploadStage] = useState("");
   const [narrationSettings, setNarrationSettings] = useState<NarrationSettings>(() => loadNarrationSettings());
   const [narrationBusy, setNarrationBusy] = useState(false);
   const [narrationStage, setNarrationStage] = useState("等待播放");
@@ -65,6 +79,7 @@ function App() {
   const openAiApiKeyRef = useRef(openAiApiKey);
   const stoppedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const musicUploadInputRef = useRef<HTMLInputElement>(null);
 
   const current = projects.find((project) => project.id === currentId) ?? projects[0];
   const cue = current?.cues[selectedScene] ?? current?.cues[0];
@@ -217,9 +232,71 @@ function App() {
     setPlaying(false);
     setPaused(false);
     setLabPlaying(false);
+    setLibraryPreviewTrackId(null);
+    setLibraryPreviewPlaying(false);
     setNarrationBusy(false);
     setNarrationStage("等待播放");
     setSceneProgress(0);
+  };
+
+  const toggleLibraryTrack = async (track: MusicTrack) => {
+    if (libraryPreviewTrackId === track.id) {
+      if (libraryPreviewPlaying) {
+        mixerRef.current?.pause();
+        setLibraryPreviewPlaying(false);
+      } else {
+        mixerRef.current?.resume();
+        setLibraryPreviewPlaying(true);
+      }
+      return;
+    }
+    stopPlayback();
+    try {
+      await mixerRef.current?.transition(track, 0.7, 0.28);
+      setLibraryPreviewTrackId(track.id);
+      setLibraryPreviewPlaying(true);
+    } catch {
+      setLibraryPreviewTrackId(null);
+      setLibraryPreviewPlaying(false);
+      notify("瀏覽器阻擋了音樂播放，請再按一次", "warn");
+    }
+  };
+
+  const requestMusicUpload = () => {
+    if (!isCloudConfigured) return notify("尚未設定 Supabase 音樂上傳服務", "warn");
+    if (!userEmail) {
+      setSettingsOpen(true);
+      return notify("請先登入雲端工作區，再上傳自己的音樂", "warn");
+    }
+    musicUploadInputRef.current?.click();
+  };
+
+  const handleMusicUpload = async (file?: File) => {
+    if (!file) return;
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    if (!extension || !["mp3", "wav"].includes(extension)) return notify("目前支援 MP3 與 WAV 音樂", "warn");
+    if (file.size > 20 * 1024 * 1024) return notify("單一音檔上限為 20 MB", "warn");
+    setMusicUploadBusy(true);
+    setMusicUploadStage("正在讀取音訊並上傳至私人空間…");
+    try {
+      const durationSeconds = await readAudioDuration(file);
+      setMusicUploadStage("GPT Audio 正在聆聽音樂並建立情緒標籤…");
+      const track = await uploadAndAnalyzeMusic({
+        file,
+        title: file.name.replace(/\.(mp3|wav)$/i, ""),
+        durationSeconds,
+        openAiApiKey: openAiApiKey.trim() || undefined,
+      });
+      setMusicTracks((items) => [track, ...items.filter((item) => item.id !== track.id)]);
+      setSelectedMusicTags([]);
+      notify(`「${track.title}」已完成 AI 標註：${track.tags.join("、")}`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "音樂上傳或 AI 分析失敗", "warn");
+    } finally {
+      setMusicUploadBusy(false);
+      setMusicUploadStage("");
+      if (musicUploadInputRef.current) musicUploadInputRef.current.value = "";
+    }
   };
 
   const prepareNarration = useCallback((project: StoryProject, scene: SceneCue, provider: Exclude<NarrationProvider, "system">) => {
@@ -509,6 +586,24 @@ function App() {
   }, [current?.cues, narrationSettings.speed, selectedScene, sceneProgress]);
   const displayedProgress = seekPreview ?? timeline.progress;
   const displayedElapsed = timeline.total * (displayedProgress / 100);
+  const musicTagOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    musicTracks.forEach((track) => track.tags.forEach((tag) => counts.set(tag, (counts.get(tag) ?? 0) + 1)));
+    const priority = ["希望", "宇宙", "平靜", "懸疑", "浪漫", "哀傷", "危機", "戰鬥", "勝利", "日常", "科幻", "神秘"];
+    return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((left, right) => {
+      const leftPriority = priority.indexOf(left.tag);
+      const rightPriority = priority.indexOf(right.tag);
+      if (leftPriority >= 0 || rightPriority >= 0) return (leftPriority < 0 ? 999 : leftPriority) - (rightPriority < 0 ? 999 : rightPriority);
+      return right.count - left.count || left.tag.localeCompare(right.tag, "zh-Hant");
+    });
+  }, [musicTracks]);
+  const filteredMusicTracks = useMemo(() => selectedMusicTags.length
+    ? musicTracks.filter((track) => selectedMusicTags.every((tag) => track.tags.includes(tag)))
+    : musicTracks, [musicTracks, selectedMusicTags]);
+
+  const toggleMusicTag = (tag: string) => {
+    setSelectedMusicTags((selected) => selected.includes(tag) ? selected.filter((item) => item !== tag) : [...selected, tag]);
+  };
 
   if (!current) return null;
 
@@ -661,16 +756,50 @@ function App() {
             </div>
           ) : (
             <div className="music-library" role="region" aria-label="音樂庫曲目" tabIndex={0}>
-              <div className="library-intro"><span>物件儲存曲庫 · {musicTracks.length} 首</span><h2>配樂可以成長，授權不能遺失。</h2><p>遠端目錄會從 Supabase／R2 載入；內建曲目只作離線保底。每首曲目都保留作者、來源、授權與情緒標籤。</p></div>
-              {musicTracks.map((track) => (
-                <div className="track-row" key={track.id}>
-                  <button onClick={() => void mixerRef.current?.transition(track, 1.2, 0.2)} aria-label={`試聽 ${track.title}`}><Play size={15} fill="currentColor" /></button>
-                  <span className="track-wave" aria-hidden="true">▂▅▃▇▄▆▂▅▇▃▆▄▂</span>
-                  <span><b>{track.title}</b><small>{track.author} · {track.license} · {track.storageProvider === "r2" ? "R2" : track.storageProvider === "supabase" ? "Supabase" : "離線"}</small></span>
-                  <div className="tags">{track.tags.map((tag) => <i key={tag}>{tag}</i>)}</div>
-                  <a href={track.sourceUrl} target="_blank" rel="noreferrer">來源</a>
+              <div className="library-intro-row">
+                <div className="library-intro"><span>物件儲存曲庫 · {musicTracks.length} 首</span><h2>配樂可以成長，授權不能遺失。</h2><p>選擇多個標籤時，只顯示同時符合所有條件的樂曲。自己的 MP3／WAV 會存入私人空間，再由 GPT Audio 聆聽並標註。</p></div>
+                <div className="music-upload-actions">
+                  <button disabled={musicUploadBusy} onClick={requestMusicUpload}>
+                    {musicUploadBusy ? <LoaderCircle className="spin" size={17} /> : <UploadCloud size={17} />}
+                    {musicUploadBusy ? "分析中…" : "上傳並由 AI 標註"}
+                  </button>
+                  <small>MP3／WAV · 20 MB 以內<br />上傳即表示你擁有使用權。</small>
+                  <input ref={musicUploadInputRef} hidden type="file" accept=".mp3,.wav,audio/mpeg,audio/wav" onChange={(event) => void handleMusicUpload(event.target.files?.[0])} />
                 </div>
-              ))}
+              </div>
+              {musicUploadStage && <div className="music-analysis-state" role="status"><BrainCircuit size={17} /><span><b>AI 音樂分析</b><small>{musicUploadStage}</small></span></div>}
+              <div className="library-filter">
+                <div className="library-filter-head">
+                  <span><Tag size={15} /><b>情緒與情境標籤</b><small>{selectedMusicTags.length ? `已選 ${selectedMusicTags.length} 個 · AND 篩選` : "可複選"}</small></span>
+                  {selectedMusicTags.length > 0 && <button onClick={() => setSelectedMusicTags([])}>清除篩選</button>}
+                </div>
+                <div className="library-tag-options" role="group" aria-label="依情緒標籤篩選樂曲" tabIndex={0}>
+                  {musicTagOptions.map(({ tag, count }) => (
+                    <button key={tag} className={selectedMusicTags.includes(tag) ? "active" : ""} aria-pressed={selectedMusicTags.includes(tag)} onClick={() => toggleMusicTag(tag)}>
+                      {tag}<small>{count}</small>
+                    </button>
+                  ))}
+                </div>
+                <div className="library-result-count" aria-live="polite">顯示 {filteredMusicTracks.length} / {musicTracks.length} 首{selectedMusicTags.length ? ` · 同時包含「${selectedMusicTags.join("」＋「")}」` : ""}</div>
+              </div>
+              <div className="track-list">
+                {filteredMusicTracks.map((track) => {
+                  const isActivePreview = libraryPreviewTrackId === track.id;
+                  const isPreviewPlaying = isActivePreview && libraryPreviewPlaying;
+                  return (
+                    <div className={`track-row ${isActivePreview ? "active" : ""} ${isPreviewPlaying ? "playing" : ""}`} key={track.id} title={track.analysisSummary}>
+                      <button className="track-preview" onClick={() => void toggleLibraryTrack(track)} aria-label={isPreviewPlaying ? `暫停 ${track.title}` : `試聽 ${track.title}`} aria-pressed={isPreviewPlaying}>
+                        {isPreviewPlaying ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
+                      </button>
+                      <span className="track-wave" aria-hidden="true">▂▅▃▇▄▆▂▅▇▃▆▄▂</span>
+                      <span><b>{track.title}</b><small>{track.author} · {track.license} · {track.userUploaded ? "我的上傳 · AI 標註" : track.storageProvider === "r2" ? "R2" : track.storageProvider === "supabase" ? "Supabase" : "離線"}</small></span>
+                      <div className="tags">{track.tags.map((tag) => <i key={tag}>{tag}</i>)}</div>
+                      {track.userUploaded || track.sourceUrl === "user-upload" ? <span className="owned-track">私人</span> : <a href={track.sourceUrl} target="_blank" rel="noreferrer">來源</a>}
+                    </div>
+                  );
+                })}
+                {!filteredMusicTracks.length && <div className="library-empty"><Tag size={21} /><b>沒有同時符合的樂曲</b><span>取消一個標籤，或清除篩選後再試一次。</span></div>}
+              </div>
             </div>
           )}
         </section>
