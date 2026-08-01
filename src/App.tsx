@@ -12,6 +12,7 @@ import { loadNarrationSettings, NARRATION_PROVIDERS, OPENAI_VOICE_OPTIONS, provi
 import { exportCueSheet, loadCurrentProjectId, loadProjects, newProject, saveCurrentProjectId, saveProjects } from "./storage";
 import { STORY_STYLES, STORY_STYLE_DESCRIPTIONS, type AnalysisMode, type MusicTrack, type NarrationProvider, type NarrationSettings, type OpenAIVoice, type SceneCue, type StoryProject, type StoryStyle } from "./types";
 import { analyzeStory } from "./storyEngine";
+import { MarketValidation } from "./MarketValidation";
 
 type Toast = { message: string; tone?: "good" | "warn" } | null;
 const styles: readonly StoryStyle[] = STORY_STYLES;
@@ -36,7 +37,7 @@ function App() {
   const [projects, setProjects] = useState<StoryProject[]>(() => loadProjects());
   const [currentId, setCurrentId] = useState(() => loadCurrentProjectId() ?? loadProjects()[0].id);
   const [selectedScene, setSelectedScene] = useState(0);
-  const [view, setView] = useState<"script" | "voices" | "library">("script");
+  const [view, setView] = useState<"script" | "voices" | "library" | "market">("script");
   const [editing, setEditing] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -608,7 +609,7 @@ function App() {
   if (!current) return null;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${view === "market" ? "market-mode" : ""}`}>
       <header className="topbar">
         <button className="icon-button mobile-only" onClick={() => setMobileNav(true)} aria-label="開啟作品庫"><Menu size={19} /></button>
         <div className="brand-mark" aria-hidden="true"><span /><span /><span /><span /><span /></div>
@@ -619,6 +620,7 @@ function App() {
           <span className="autosave"><Save size={13} /> 已自動保存</span>
         </div>
         <div className="topbar-actions">
+          <button className="quiet-button market-topbar-button" onClick={() => setView("market")}><Sparkles size={16} /><span>創始測試</span></button>
           <button className="quiet-button" onClick={() => exportCueSheet(current)}><Download size={16} /><span>匯出配樂表</span></button>
           <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label="設定"><Settings2 size={18} /></button>
         </div>
@@ -649,8 +651,9 @@ function App() {
       </aside>
       {mobileNav && <button className="scrim" onClick={() => setMobileNav(false)} aria-label="關閉導覽" />}
 
-      <main className="studio">
+      <main className={`studio ${view === "market" ? "market-studio" : ""}`}>
         <section className="manuscript-panel">
+          {view === "market" ? <MarketValidation onOpenWorkspace={() => setView("script")} onNotify={notify} /> : <>
           <div className="manuscript-head">
             <div className="title-stack">
               <input aria-label="作品名稱" value={current.title} onChange={(event) => updateCurrent({ title: event.target.value })} />
@@ -802,9 +805,10 @@ function App() {
               </div>
             </div>
           )}
+          </>}
         </section>
 
-        <aside className="inspector">
+        {view !== "market" && <aside className="inspector">
           <div className="inspector-head"><span>場景導演</span><small>{cue ? `${selectedScene + 1} / ${current.cues.length}` : "尚未分析"}</small></div>
           {cue ? (
             <div className="inspector-content" role="region" aria-label="場景調整" tabIndex={0}>
@@ -830,10 +834,10 @@ function App() {
               <div className="keywords"><span>判斷線索</span><div>{cue.matchedKeywords.length ? cue.matchedKeywords.map((keyword) => <i key={keyword}>{keyword}</i>) : <i>情緒弧線</i>}</div></div>
             </div>
           ) : <div className="inspector-empty"><Sparkles size={24} /><b>等待第一幕</b><span>分析完成後，可在這裡微調每個場景。</span></div>}
-        </aside>
+        </aside>}
       </main>
 
-      <footer className="transport">
+      {view !== "market" && <footer className="transport">
         <div className="now-playing">
           <span className="album-mark">{narrationBusy ? <LoaderCircle className="spin" size={18} /> : <Headphones size={18} />}</span>
           <span><small>{narrationStage}</small><b>{cue?.title ?? "等待配樂"}</b></span>
@@ -866,7 +870,7 @@ function App() {
           </div>
         </div>
         <div className="master-volume"><Volume2 size={17} /><input aria-label="主音量" type="range" min="0" max="1" step="0.01" value={masterVolume} onChange={(event) => { const value = Number(event.target.value); setMasterVolume(value); mixerRef.current?.setMasterVolume(value); }} /><span>{Math.round(masterVolume * 100)}</span></div>
-      </footer>
+      </footer>}
 
       {settingsOpen && (
         <div className="modal-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>

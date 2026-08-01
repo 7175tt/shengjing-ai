@@ -28,6 +28,8 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_MARKET_READER_CHECKOUT_URL: ${{ vars.VITE_MARKET_READER_CHECKOUT_URL }}
+          VITE_MARKET_CREATOR_CHECKOUT_URL: ${{ vars.VITE_MARKET_CREATOR_CHECKOUT_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

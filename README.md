@@ -16,6 +16,7 @@
 - 自有音樂：登入使用者可上傳 20 MB 以內的 MP3／WAV 到私人 `user-music` Storage；後端使用 OpenAI `gpt-audio-mini` 聆聽音訊並建立標準化繁中情緒標籤，曲目不會公開給其他使用者。
 - 可攜資料：匯出帶場景、情緒與混音參數的 JSON 配樂表。
 - 漸進式雲端：沒有後端也能完整使用；登入後加入跨裝置保存與 AI 導演。
+- 市場驗證頁：工作台右上角「創始測試」可切換到讀者／作者兩種測試方案、測試價格與候補名單表單；候補名單只收 Email、身分與選填需求，不收小說全文。
 
 ## 本機執行
 
@@ -60,12 +61,16 @@ npm run preview
 
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_MARKET_READER_CHECKOUT_URL`（選配：讀者付款連結）
+   - `VITE_MARKET_CREATOR_CHECKOUT_URL`（選配：作者／工作室付款連結）
 
 5. 在 Supabase Auth URL Configuration 加入正式 GitHub Pages URL 作為 Redirect URL。
 
 > 平台的 `OPENAI_API_KEY` 只放在 Supabase secret，絕對不要命名為 `VITE_OPENAI_API_KEY` 或提交到 Git。前端自備金鑰也不得寫入 `localStorage`、作品資料或分析紀錄。
 
 > OpenAI 合成聲音在介面中會明確標示為 AI 生成。正式朗讀須先以 Email magic link 登入，避免公開網頁被濫用產生 API 費用。
+
+> 市場驗證的 `public.market_leads` 表已包含在 `supabase/schema.sql`；它只允許匿名插入符合格式的候補資料，不開放匿名讀取。付款連結未設定時，CTA 會改為引導填寫付費意願，不會假裝已完成付款。
 
 ## 發布
 

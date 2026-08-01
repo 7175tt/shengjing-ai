@@ -159,3 +159,18 @@ export async function pushCloudProject(project: StoryProject): Promise<void> {
   });
   if (error) throw error;
 }
+
+export async function submitMarketLead(input: {
+  email: string;
+  role: "reader" | "creator";
+  note?: string;
+}): Promise<void> {
+  if (!supabase) throw new Error("尚未設定候補名單服務");
+  const { error } = await supabase.from("market_leads").insert({
+    email: input.email,
+    role: input.role,
+    note: input.note ?? null,
+    source: "shengjing-landing",
+  });
+  if (error) throw error;
+}

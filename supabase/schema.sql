@@ -135,6 +135,29 @@ create policy "owners can delete personal music" on public.music_tracks
 grant select, delete on table public.music_tracks to authenticated;
 grant select, insert, update, delete on table public.music_tracks to service_role;
 
+-- Market validation: minimal lead capture for the public founding-test page.
+create table if not exists public.market_leads (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  role text not null check (role in ('reader', 'creator')),
+  note text,
+  source text not null default 'shengjing-landing',
+  created_at timestamptz not null default now()
+);
+
+alter table public.market_leads enable row level security;
+drop policy if exists "public can submit market leads" on public.market_leads;
+create policy "public can submit market leads" on public.market_leads
+  for insert to anon, authenticated
+  with check (
+    char_length(trim(email)) between 3 and 320
+    and role in ('reader', 'creator')
+    and char_length(coalesce(note, '')) <= 1000
+  );
+
+revoke select, update, delete on table public.market_leads from anon, authenticated;
+grant insert on table public.market_leads to anon, authenticated;
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('user-music', 'user-music', false, 20971520, array['audio/mpeg', 'audio/wav', 'audio/x-wav'])
 on conflict (id) do update set public = excluded.public,
