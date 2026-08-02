@@ -53,6 +53,7 @@ npm run preview
    supabase functions deploy analyze-story
    supabase functions deploy narrate-scene
    supabase functions deploy analyze-music
+   supabase functions deploy submit-market-lead
    ```
 
    `OPENAI_MODEL` 可換成其他文字分析模型；若未設定，`analyze-story` 目前以 `gpt-5.6-luna` 作為程式預設值。
@@ -71,6 +72,8 @@ npm run preview
 > OpenAI 合成聲音在介面中會明確標示為 AI 生成。正式朗讀須先以 Email magic link 登入，避免公開網頁被濫用產生 API 費用。
 
 > 市場驗證的 `public.market_leads` 表已包含在 `supabase/schema.sql`；它只允許匿名插入符合格式的候補資料，不開放匿名讀取。付款連結未設定時，CTA 會改為引導填寫付費意願，不會假裝已完成付款。
+
+> 候補名單通知使用 `submit-market-lead` Edge Function。請把 `RESEND_API_KEY`、`MARKET_LEAD_TO_EMAIL=7175tt@gmail.com` 與 `MARKET_LEAD_FROM_EMAIL` 設為 Supabase secrets；API Key 不得放在 `VITE_*` 變數或前端程式。
 
 ## 發布
 
