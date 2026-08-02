@@ -164,6 +164,8 @@ create policy "public can submit market leads" on public.market_leads
 
 revoke select, update, delete on table public.market_leads from anon, authenticated;
 grant insert on table public.market_leads to anon, authenticated;
+grant usage on schema public to service_role;
+grant select, insert, update on table public.market_leads to service_role;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('user-music', 'user-music', false, 20971520, array['audio/mpeg', 'audio/wav', 'audio/x-wav'])
