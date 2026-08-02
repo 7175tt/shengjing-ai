@@ -1,5 +1,5 @@
 import { normalizeStoryStyle, type StoryProject, type StoryStyle } from "./types";
-import { analyzeStory, DEMO_STORY } from "./storyEngine";
+import { analyzeStory, DEMO_STORY, URBAN_DEMO_STORY } from "./storyEngine";
 
 const STORAGE_KEY = "shengjing-ai-projects-v1";
 const CURRENT_KEY = "shengjing-ai-current-project";
@@ -17,15 +17,25 @@ export function loadProjects(): StoryProject[] {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const projects = JSON.parse(stored) as StoryProject[];
-      if (projects.length) return projects.map((project) => {
+      if (projects.length) {
+        const normalized = projects.map((project) => {
         const style = normalizeStoryStyle(project.style);
         return project.style === style ? project : { ...project, style, cues: analyzeStory(project.body, style) };
-      });
+        });
+        // 舊使用者也自動補上第二個範本，不覆寫既有作品或目前選取狀態。
+        if (!normalized.some((project) => project.body === URBAN_DEMO_STORY)) {
+          normalized.push(newProject("霓虹王座｜都市無敵流", URBAN_DEMO_STORY, "電影感"));
+          saveProjects(normalized);
+        }
+        return normalized;
+      }
     }
   } catch { /* corrupted storage starts fresh */ }
   const demo = newProject();
-  saveProjects([demo]);
-  return [demo];
+  const urbanDemo = newProject("霓虹王座｜都市無敵流", URBAN_DEMO_STORY, "電影感");
+  const templates = [demo, urbanDemo];
+  saveProjects(templates);
+  return templates;
 }
 
 export function saveProjects(projects: StoryProject[]) {
