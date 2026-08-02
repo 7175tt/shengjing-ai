@@ -164,13 +164,18 @@ export async function submitMarketLead(input: {
   email: string;
   role: "reader" | "creator";
   note?: string;
-}): Promise<void> {
+}): Promise<{ notificationSent: boolean; duplicate?: boolean }> {
   if (!supabase) throw new Error("尚未設定候補名單服務");
-  const { error } = await supabase.from("market_leads").insert({
-    email: input.email,
-    role: input.role,
-    note: input.note ?? null,
-    source: "shengjing-landing",
+  const { data, error } = await supabase.functions.invoke("submit-market-lead", {
+    body: {
+      email: input.email,
+      role: input.role,
+      note: input.note ?? "",
+      source: "shengjing-landing",
+      website: "",
+    },
   });
   if (error) throw error;
+  if (!data?.stored) throw new Error(data?.error ?? "候補名單儲存失敗");
+  return { notificationSent: Boolean(data.notificationSent), duplicate: Boolean(data.duplicate) };
 }
