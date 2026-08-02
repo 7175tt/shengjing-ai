@@ -45,6 +45,21 @@ export interface NarrationResult {
   cacheHit: boolean;
 }
 
+/**
+ * Fetch one of the fixed, public showcase narrations.
+ *
+ * The Edge Function only accepts a known demo id; no user supplied text or
+ * browser-side API key is sent. This keeps the public landing page safe while
+ * allowing the showcase to use the same OpenAI TTS voice as the workspace.
+ */
+export async function generateDemoNarration(demoId: string): Promise<NarrationResult> {
+  if (!supabase) throw new Error("尚未設定展示旁白服務");
+  const { data, error } = await supabase.functions.invoke("narrate-scene", { body: { demoId } });
+  if (error) throw error;
+  if (!data?.url) throw new Error(data?.error ?? "展示旁白沒有回傳音檔");
+  return data as NarrationResult;
+}
+
 export async function generateNarration(input: {
   text: string;
   projectId: string;
