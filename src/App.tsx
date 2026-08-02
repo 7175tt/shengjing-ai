@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { SoundtrackMixer } from "./audioEngine";
 import { analyzeInCloud, generateDemoNarration, generateNarration, getCloudUser, isCloudConfigured, loadRemoteMusicTracks, pullCloudProjects, pushCloudProject, signInWithEmail, signOut, uploadAndAnalyzeMusic, type NarrationResult } from "./cloud";
-import { assignMusicTracks, DEMO_STORY, getTrack, MIDI_DERIVED_TRACK_IDS, moodColor, MUSIC_LIBRARY, supportedMusicTracks } from "./storyEngine";
+import { assignMusicTracks, getShowcaseNarrationPrefix, getTrack, isShowcaseStory, MIDI_DERIVED_TRACK_IDS, moodColor, MUSIC_LIBRARY, supportedMusicTracks } from "./storyEngine";
 import { loadNarrationSettings, NARRATION_PROVIDERS, OPENAI_VOICE_OPTIONS, providerLabel, saveNarrationSettings, VOICE_LAB_SAMPLES } from "./narration";
 import { exportCueSheet, loadCurrentProjectId, loadProjects, newProject, saveCurrentProjectId, saveProjects } from "./storage";
 import { STORY_STYLES, STORY_STYLE_DESCRIPTIONS, type AnalysisMode, type MusicTrack, type NarrationProvider, type NarrationSettings, type OpenAIVoice, type SceneCue, type StoryProject, type StoryStyle } from "./types";
@@ -302,7 +302,8 @@ function App() {
 
   const prepareNarration = useCallback((project: StoryProject, scene: SceneCue, provider: Exclude<NarrationProvider, "system">) => {
     const settings = narrationSettingsRef.current;
-    const isShowcaseDemo = project.body === DEMO_STORY;
+    const showcasePrefix = getShowcaseNarrationPrefix(project.body);
+    const isShowcaseDemo = Boolean(showcasePrefix);
     const narrationRate = effectiveNarrationRate(scene.narrationRate, settings.speed);
     const key = JSON.stringify({
       provider, projectId: project.id, sceneId: scene.id, text: scene.text,
@@ -313,7 +314,7 @@ function App() {
     const existing = narrationCacheRef.current.get(key);
     if (existing) return existing;
     const promise = (isShowcaseDemo
-      ? generateDemoNarration(`demo-scene-${scene.index + 1}`)
+      ? generateDemoNarration(`${showcasePrefix}-${scene.index + 1}`)
       : generateNarration({
         text: scene.text,
         projectId: project.id,
@@ -352,7 +353,7 @@ function App() {
 
     let naturalVoice: NarrationResult | null = null;
     const settings = narrationSettingsRef.current;
-    const isShowcaseDemo = project.body === DEMO_STORY;
+    const isShowcaseDemo = isShowcaseStory(project.body);
     const narrationProvider = isShowcaseDemo ? "openai" : settings.provider;
     if (narrationProvider !== "system") {
       setNarrationBusy(true);
