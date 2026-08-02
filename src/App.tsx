@@ -6,8 +6,8 @@ import {
   Upload, UploadCloud, Volume2, WandSparkles, X,
 } from "lucide-react";
 import { SoundtrackMixer } from "./audioEngine";
-import { analyzeInCloud, generateNarration, getCloudUser, isCloudConfigured, loadRemoteMusicTracks, pullCloudProjects, pushCloudProject, signInWithEmail, signOut, uploadAndAnalyzeMusic, type NarrationResult } from "./cloud";
-import { assignMusicTracks, getTrack, MIDI_DERIVED_TRACK_IDS, moodColor, MUSIC_LIBRARY, supportedMusicTracks } from "./storyEngine";
+import { analyzeInCloud, generateDemoNarration, generateNarration, getCloudUser, isCloudConfigured, loadRemoteMusicTracks, pullCloudProjects, pushCloudProject, signInWithEmail, signOut, uploadAndAnalyzeMusic, type NarrationResult } from "./cloud";
+import { assignMusicTracks, DEMO_STORY, getTrack, MIDI_DERIVED_TRACK_IDS, moodColor, MUSIC_LIBRARY, supportedMusicTracks } from "./storyEngine";
 import { loadNarrationSettings, NARRATION_PROVIDERS, OPENAI_VOICE_OPTIONS, providerLabel, saveNarrationSettings, VOICE_LAB_SAMPLES } from "./narration";
 import { exportCueSheet, loadCurrentProjectId, loadProjects, newProject, saveCurrentProjectId, saveProjects } from "./storage";
 import { STORY_STYLES, STORY_STYLE_DESCRIPTIONS, type AnalysisMode, type MusicTrack, type NarrationProvider, type NarrationSettings, type OpenAIVoice, type SceneCue, type StoryProject, type StoryStyle } from "./types";
@@ -302,6 +302,7 @@ function App() {
 
   const prepareNarration = useCallback((project: StoryProject, scene: SceneCue, provider: Exclude<NarrationProvider, "system">) => {
     const settings = narrationSettingsRef.current;
+    const isShowcaseDemo = project.body === DEMO_STORY;
     const narrationRate = effectiveNarrationRate(scene.narrationRate, settings.speed);
     const key = JSON.stringify({
       provider, projectId: project.id, sceneId: scene.id, text: scene.text,
@@ -311,19 +312,21 @@ function App() {
     });
     const existing = narrationCacheRef.current.get(key);
     if (existing) return existing;
-    const promise = generateNarration({
-      text: scene.text,
-      projectId: project.id,
-      sceneId: scene.id,
-      provider,
-      mood: scene.mood,
-      style: project.style,
-      narrationRate,
-      openAiVoice: settings.openAiVoice,
-      openAiApiKey: provider === "openai" ? openAiApiKeyRef.current.trim() || undefined : undefined,
-      previousText: project.cues[scene.index - 1]?.text,
-      nextText: project.cues[scene.index + 1]?.text,
-    }).catch((error) => {
+    const promise = (isShowcaseDemo
+      ? generateDemoNarration(`demo-scene-${scene.index + 1}`)
+      : generateNarration({
+        text: scene.text,
+        projectId: project.id,
+        sceneId: scene.id,
+        provider,
+        mood: scene.mood,
+        style: project.style,
+        narrationRate,
+        openAiVoice: settings.openAiVoice,
+        openAiApiKey: provider === "openai" ? openAiApiKeyRef.current.trim() || undefined : undefined,
+        previousText: project.cues[scene.index - 1]?.text,
+        nextText: project.cues[scene.index + 1]?.text,
+      })).catch((error) => {
       narrationCacheRef.current.delete(key);
       throw error;
     });
@@ -349,16 +352,18 @@ function App() {
 
     let naturalVoice: NarrationResult | null = null;
     const settings = narrationSettingsRef.current;
-    if (settings.provider !== "system") {
+    const isShowcaseDemo = project.body === DEMO_STORY;
+    const narrationProvider = isShowcaseDemo ? "openai" : settings.provider;
+    if (narrationProvider !== "system") {
       setNarrationBusy(true);
       setNarrationStage(`正在生成第 ${index + 1} 幕自然旁白…`);
       try {
-        naturalVoice = await prepareNarration(project, scene, settings.provider);
+        naturalVoice = await prepareNarration(project, scene, narrationProvider);
       } catch (error) {
-        if (!settings.autoFallback) {
+        if (isShowcaseDemo || !settings.autoFallback) {
           setPlaying(false);
           mixerRef.current?.stop();
-          notify(error instanceof Error ? error.message : "自然語音生成失敗", "warn");
+          notify(isShowcaseDemo ? "展示旁白暫時無法載入，請稍後再試" : (error instanceof Error ? error.message : "自然語音生成失敗"), "warn");
           return;
         }
         notify(`自然語音暫不可用，已改用裝置語音：${error instanceof Error ? error.message : "連線失敗"}`, "warn");
@@ -397,7 +402,7 @@ function App() {
       }
       catch { notify("瀏覽器阻擋了自然語音播放，請再按一次播放", "warn"); setPlaying(false); return; }
       const next = project.cues[index + 1];
-      if (next && settings.provider !== "system") void prepareNarration(project, next, settings.provider).catch(() => undefined);
+      if (next && narrationProvider !== "system") void prepareNarration(project, next, narrationProvider).catch(() => undefined);
       return;
     }
 
