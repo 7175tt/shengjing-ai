@@ -11,6 +11,42 @@ type Provider = "openai" | "elevenlabs" | "minimax";
 
 const openAiVoices = new Set(["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse", "marin", "cedar"]);
 
+// Public showcase audio is deliberately allow-listed. The landing page can
+// request these fixed passages without receiving or sending an API key, while
+// arbitrary user text still requires an authenticated workspace session.
+const demoNarrations: Record<string, { text: string; mood: Mood; narrationRate: number }> = {
+  "demo-scene-1": {
+    text: "北境的雨下了整整七日。昔日被稱為「白狼」的將軍陸沉，如今披著破舊斗篷，獨自走回焚毀的故城。三年前，他在黑石谷敗給帝國鐵騎，部眾死傷殆盡，連佩劍也折在敵將腳下。城門邊的孩子不認得他，老人卻低下眼睛，像看見一段不願提起的往事。",
+    mood: "sorrow",
+    narrationRate: 0.84,
+  },
+  "demo-scene-2": {
+    text: "夜裡，帝國的號角再次從山外傳來。斥候帶回消息，敵軍天亮前就會抵達，而城中只剩數百名疲憊的守衛。議事廳裡沒有人敢看陸沉，眾人記得他的失敗，也記得那場失敗帶走多少親人。有人勸他趁黑離開，至少還能保住性命。",
+    mood: "dark",
+    narrationRate: 0.88,
+  },
+  "demo-scene-3": {
+    text: "陸沉走進廢棄的鑄劍房，在灰燼裡找到老師留下的半截劍柄。牆上仍刻著少年時的誓言：劍可以折，守護之心不能。爐火早已熄滅，他卻彷彿聽見昔日同袍的笑聲。良久，他抬起頭，把斷劍重新綁在手上。",
+    mood: "rise",
+    narrationRate: 0.94,
+  },
+  "demo-scene-4": {
+    text: "黎明前，陸沉登上城牆。他沒有許諾勝利，只說自己會站在第一個倒下的位置。沉默的守衛一個接一個舉起長槍，鐵匠帶來剛鑄好的箭頭，連城門邊的老人也敲響戰鼓。第一道晨光越過山脊時，整座城像從漫長的冬眠中醒來。",
+    mood: "rise",
+    narrationRate: 0.96,
+  },
+  "demo-scene-5": {
+    text: "敵軍撞開外門，黑色洪流湧進狹道。陸沉迎著箭雨衝下石階，以斷劍架住敵將的長刀。那一瞬間，他不再是等待原諒的敗軍之將，而是替身後每一個人爭取明天的守門者。戰鼓越來越快，城牆上的旗幟在風中重新展開。",
+    mood: "crisis",
+    narrationRate: 1.02,
+  },
+  "demo-scene-6": {
+    text: "正午鐘聲響起時，帝國軍開始後退。陸沉沒有追擊，只站在城門前，看著雲層裂開，陽光落在滿地泥水與殘甲之上。孩子們第一次喊出「白狼」之名。這一次，他明白英雄不是從未倒下的人，而是在眾人最需要希望時，仍願意再站起來的人。",
+    mood: "triumph",
+    narrationRate: 0.9,
+  },
+};
+
 const moodDirections: Record<Mood, string> = {
   calm: "平靜、親近，保留日常說話的自然呼吸與停頓。",
   sorrow: "低沉克制，讓悲傷藏在句尾，不哭腔、不灑狗血，保留人物尊嚴。",
@@ -82,6 +118,26 @@ async function openAiSpeech(text: string, instructions: string, narrationRate: n
   return { bytes: new Uint8Array(await response.arrayBuffer()), model, voice };
 }
 
+async function serveDemoNarration(demoId: string, url: string, secret: string) {
+  const demo = demoNarrations[demoId];
+  if (!demo) throw new Error("不支援的展示旁白");
+  const admin = createClient(url, secret);
+  const storagePath = `demo-narration/${demoId}.mp3`;
+  const bucket = admin.storage.from("music-library");
+  const publicUrl = bucket.getPublicUrl(storagePath).data.publicUrl;
+  const { data: existing } = await bucket.list("demo-narration", { search: `${demoId}.mp3`, limit: 1 });
+  if (existing?.some((item) => item.name === `${demoId}.mp3`)) {
+    return json({ url: publicUrl, provider: "openai", model: Deno.env.get("OPENAI_TTS_MODEL") ?? "gpt-4o-mini-tts", voice: "cedar", cacheHit: true });
+  }
+
+  const generated = await openAiSpeech(demo.text, direction(demo.mood, "電影感", demo.narrationRate), demo.narrationRate, "cedar");
+  const { error: uploadError } = await bucket.upload(storagePath, generated.bytes, {
+    contentType: "audio/mpeg", cacheControl: "31536000", upsert: false,
+  });
+  if (uploadError && !/already exists/i.test(uploadError.message)) throw uploadError;
+  return json({ url: publicUrl, provider: "openai", model: generated.model, voice: generated.voice, cacheHit: false });
+}
+
 async function elevenLabsSpeech(text: string, mood: Mood, previousText?: string, nextText?: string) {
   const key = Deno.env.get("ELEVENLABS_API_KEY");
   const voice = Deno.env.get("ELEVENLABS_VOICE_ID");
@@ -127,17 +183,22 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {
+    const input = await request.json();
+    const demoId = typeof input.demoId === "string" ? input.demoId : "";
     const authHeader = request.headers.get("Authorization");
     const url = Deno.env.get("SUPABASE_URL");
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
     const secret = adminKey();
+    if (demoId) {
+      if (!url || !secret) throw new Error("展示旁白服務尚未完成設定");
+      return await serveDemoNarration(demoId, url, secret);
+    }
     if (!authHeader || !url || !anonKey || !secret) throw new Error("Supabase 語音後端尚未完成設定");
 
     const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
     const { data: { user }, error: userError } = await userClient.auth.getUser();
     if (userError || !user) return json({ error: "請先登入再使用自然語音" }, 401);
 
-    const input = await request.json();
     const text = typeof input.text === "string" ? input.text.trim() : "";
     const provider = input.provider as Provider;
     const mood = input.mood as Mood;
