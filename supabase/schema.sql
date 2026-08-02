@@ -142,8 +142,15 @@ create table if not exists public.market_leads (
   role text not null check (role in ('reader', 'creator')),
   note text,
   source text not null default 'shengjing-landing',
+  notification_status text not null default 'pending',
+  notification_sent_at timestamptz,
+  notification_error text,
   created_at timestamptz not null default now()
 );
+
+alter table public.market_leads add column if not exists notification_status text not null default 'pending';
+alter table public.market_leads add column if not exists notification_sent_at timestamptz;
+alter table public.market_leads add column if not exists notification_error text;
 
 alter table public.market_leads enable row level security;
 drop policy if exists "public can submit market leads" on public.market_leads;
