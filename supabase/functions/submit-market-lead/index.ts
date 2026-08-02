@@ -14,14 +14,31 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const cleanText = (value: unknown, maxLength: number) => String(value ?? "").trim().slice(0, maxLength);
 
 function adminKey() {
+  const dedicated = Deno.env.get("MARKET_LEAD_SERVICE_ROLE_KEY");
+  if (dedicated) return dedicated;
   const legacy = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (legacy) return legacy;
   try {
     const keys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}") as Record<string, string>;
-    return keys.default;
+    return keys.default ?? keys.service_role ?? Object.values(keys)[0];
   } catch {
     return undefined;
   }
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    if (typeof record.message === "string" && record.message.trim()) return record.message;
+    if (typeof record.details === "string" && record.details.trim()) return record.details;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "Unknown error";
+    }
+  }
+  return String(error ?? "Unknown error");
 }
 
 function isValidEmail(email: string) {
@@ -60,7 +77,10 @@ Deno.serve(async (request) => {
     if (!isValidEmail(email)) throw new Error("Email 格式不正確");
     if (!role) throw new Error("使用身分不正確");
 
-    const admin = createClient(url, serviceKey);
+    const admin = createClient(url, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
+    });
     const recentCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: recentLead } = await admin.from("market_leads")
       .select("id, notification_status")
@@ -80,7 +100,7 @@ Deno.serve(async (request) => {
       source,
       notification_status: "pending",
     }).select("id").single();
-    if (insertError || !lead) throw insertError ?? new Error("候補名單儲存失敗");
+    if (insertError || !lead) throw new Error(errorMessage(insertError ?? "候補名單儲存失敗"));
 
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     const recipient = Deno.env.get("MARKET_LEAD_TO_EMAIL") ?? "7175tt@gmail.com";
@@ -111,6 +131,7 @@ Deno.serve(async (request) => {
     await admin.from("market_leads").update({ notification_status: "sent", notification_sent_at: new Date().toISOString(), notification_error: null }).eq("id", lead.id);
     return json({ stored: true, notificationSent: true });
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "Unknown error" }, 400);
+    console.error("submit-market-lead failed", error);
+    return json({ error: errorMessage(error) }, 400);
   }
 });
