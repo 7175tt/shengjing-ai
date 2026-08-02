@@ -1,6 +1,6 @@
-import { useMemo, useState, type CSSProperties, type FormEvent } from "react";
-import { ArrowRight, Check, Headphones, Mail, Play, Sparkles, Users, WandSparkles } from "lucide-react";
-import { submitMarketLead } from "./cloud";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { ArrowRight, Check, Headphones, Mail, Pause, Play, Sparkles, Users, WandSparkles } from "lucide-react";
+import { generateDemoNarration, submitMarketLead } from "./cloud";
 
 type MarketRole = "reader" | "creator";
 type SubmissionMode = "cloud" | "local" | null;
@@ -47,9 +47,47 @@ export function MarketValidation({ onOpenWorkspace, onNotify }: MarketValidation
   const [consent, setConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<SubmissionMode>(null);
+  const [demoAudioState, setDemoAudioState] = useState<"idle" | "loading" | "playing">("idle");
+  const demoAudioRef = useRef<HTMLAudioElement | null>(null);
   const offer = roleContent[role];
   const checkoutUrl = getConfiguredUrl(role);
   const bars = useMemo(() => [22, 38, 28, 56, 44, 78, 63, 89, 51, 70, 36, 62, 45, 31, 54, 41, 67, 35], []);
+
+  useEffect(() => {
+    const audio = new Audio();
+    audio.preload = "metadata";
+    audio.onended = () => setDemoAudioState("idle");
+    audio.onerror = () => setDemoAudioState("idle");
+    demoAudioRef.current = audio;
+    return () => {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      demoAudioRef.current = null;
+    };
+  }, []);
+
+  const toggleDemoAudio = async () => {
+    const audio = demoAudioRef.current;
+    if (!audio) return;
+    if (demoAudioState === "playing") {
+      audio.pause();
+      setDemoAudioState("idle");
+      return;
+    }
+    try {
+      setDemoAudioState("loading");
+      if (!audio.src) {
+        const result = await generateDemoNarration("demo-scene-1");
+        audio.src = result.url;
+      }
+      await audio.play();
+      setDemoAudioState("playing");
+    } catch {
+      setDemoAudioState("idle");
+      onNotify("展示旁白暫時無法載入，請稍後再試。", "warn");
+    }
+  };
 
   const focusForm = (nextRole = role) => {
     setRole(nextRole);
@@ -118,7 +156,7 @@ export function MarketValidation({ onOpenWorkspace, onNotify }: MarketValidation
           <div className="stage-title"><span className="stage-scene-dot" /><b>逆風之後</b><small>場景 03 · 再起</small></div>
           <div className="stage-wave" aria-hidden="true">{bars.map((height, index) => <i key={index} style={{ "--bar-height": `${height}%`, "--bar-delay": `${index * -0.09}s` } as CSSProperties} />)}</div>
           <div className="stage-timeline"><span>文字</span><i /><span>情緒分析</span><i /><span>朗讀</span><i /><span>配樂</span></div>
-          <div className="stage-cue"><span><WandSparkles size={14} /> AI 導演提示</span><b>低頻漸強 · 交叉淡化 3.2s</b><small>不是硬切，是讓情緒先抵達。</small></div>
+          <div className="stage-cue"><span><WandSparkles size={14} /> AI 導演提示</span><b>低頻漸強 · 交叉淡化 3.2s</b><small>不是硬切，是讓情緒先抵達。</small><button className="stage-audio-button" type="button" onClick={() => void toggleDemoAudio()} disabled={demoAudioState === "loading"}>{demoAudioState === "playing" ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}{demoAudioState === "loading" ? "正在載入 OpenAI 旁白…" : demoAudioState === "playing" ? "暫停 OpenAI 展示旁白" : "試聽 OpenAI 展示旁白"}</button><small className="stage-ai-disclosure">展示旁白由 OpenAI AI 生成，並非真人聲音。</small></div>
         </div>
       </section>
 
