@@ -77,9 +77,15 @@ export function MarketValidation({ onOpenWorkspace, onNotify }: MarketValidation
     }
     setSubmitting(true);
     try {
-      await submitMarketLead({ email: email.trim(), role, note: note.trim() || undefined });
+      const result = await submitMarketLead({ email: email.trim(), role, note: note.trim() || undefined });
       setSubmitted("cloud");
-      onNotify("已收到你的創始測試意願。", "good");
+      if (result.duplicate) {
+        onNotify("這個 Email 已在創始測試名單中。", "good");
+      } else if (result.notificationSent) {
+        onNotify("已收到名單，通知已寄給產品負責人。", "good");
+      } else {
+        onNotify("名單已保存，但通知信服務尚未完成設定。", "warn");
+      }
     } catch {
       const key = "shengjing-market-leads";
       const existing = JSON.parse(window.localStorage.getItem(key) ?? "[]") as unknown[];
