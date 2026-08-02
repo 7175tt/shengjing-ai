@@ -19,12 +19,25 @@ export function loadProjects(): StoryProject[] {
       const projects = JSON.parse(stored) as StoryProject[];
       if (projects.length) {
         const normalized = projects.map((project) => {
-        const style = normalizeStoryStyle(project.style);
-        return project.style === style ? project : { ...project, style, cues: analyzeStory(project.body, style) };
+          const style = normalizeStoryStyle(project.style);
+          return project.style === style ? project : { ...project, style, cues: analyzeStory(project.body, style) };
         });
+        let changed = false;
+        const legacyUrban = normalized.find((project) => project.title === "霓虹王座｜都市無敵流" && project.body.includes("\\n\\n"));
+        if (legacyUrban) {
+          // 修復早期版本把段落分隔存成文字符號的都市範本，保留原作品 ID。
+          legacyUrban.body = URBAN_DEMO_STORY;
+          legacyUrban.style = "電影感";
+          legacyUrban.cues = analyzeStory(URBAN_DEMO_STORY, "電影感");
+          legacyUrban.updatedAt = new Date().toISOString();
+          changed = true;
+        }
         // 舊使用者也自動補上第二個範本，不覆寫既有作品或目前選取狀態。
         if (!normalized.some((project) => project.body === URBAN_DEMO_STORY)) {
           normalized.push(newProject("霓虹王座｜都市無敵流", URBAN_DEMO_STORY, "電影感"));
+          changed = true;
+        }
+        if (changed) {
           saveProjects(normalized);
         }
         return normalized;
